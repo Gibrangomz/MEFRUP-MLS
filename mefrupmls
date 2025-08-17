@@ -153,39 +153,59 @@ def parse_int_str(s, default=0):
         return default
 
 def acum_por_fecha(rows, fecha_iso):
-    total=scrap=0; meta=0.0; n=0
+    total=scrap=0; meta=0.0; n=0; turno_seg=0; paro_seg=0
     for r in rows:
         if r.get("fecha")!=fecha_iso: continue
         try:
             total+=int(float(r.get("total_pzs","0")))
             scrap+=int(float(r.get("scrap_pzs","0")))
             meta +=float(r.get("meta_oper_pzs","0"))
+            horas=float(str(r.get("horas_turno","0")).replace(",",".")) or 0.0
+            turno_seg += int(horas*3600)
+            pmin=float(str(r.get("tiempo_paro_min","0")).replace(",",".")) or 0.0
+            paro_seg  += int(pmin*60)
             n+=1
         except: pass
-    if total<=0 or meta<=0:
-        return {"count":n,"total":total,"scrap":scrap,"buenas":max(0,total-scrap),
-                "perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
+    buenas=max(0,total-scrap)
+    oper_seg=max(0, turno_seg-paro_seg)
+    if total<=0 or meta<=0 or turno_seg<=0 or oper_seg<=0:
+        return {"count":n,"total":total,"scrap":scrap,"buenas":buenas,
+                "avail_pct":0.0,"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
+    A=oper_seg/turno_seg
+    P=total/meta
+    Q=buenas/total
+    OEE=A*P*Q*100.0
     return {"count":n,"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),
+            "avail_pct":round(A*100,2),"perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),
             "oee_pct":round(OEE,2),"meta_pzs":meta}
 
 def acum_global(rows):
-    total=scrap=0; meta=0.0; n=0; dias=set()
+    total=scrap=0; meta=0.0; n=0; dias=set(); turno_seg=0; paro_seg=0
     for r in rows:
         try:
             total+=int(float(r.get("total_pzs","0")))
             scrap+=int(float(r.get("scrap_pzs","0")))
             meta +=float(r.get("meta_oper_pzs","0"))
+            horas=float(str(r.get("horas_turno","0")).replace(",",".")) or 0.0
+            turno_seg += int(horas*3600)
+            pmin=float(str(r.get("tiempo_paro_min","0")).replace(",",".")) or 0.0
+            paro_seg  += int(pmin*60)
             n+=1
             if r.get("fecha"): dias.add(r["fecha"])
         except: pass
-    if total<=0 or meta<=0:
+    buenas=max(0,total-scrap)
+    oper_seg=max(0, turno_seg-paro_seg)
+    if total<=0 or meta<=0 or turno_seg<=0 or oper_seg<=0:
         return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,
-                "buenas":max(0,total-scrap),"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
+                "buenas":buenas,"avail_pct":0.0,"perf_pct":0.0,
+                "qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
+    A=oper_seg/turno_seg
+    P=total/meta
+    Q=buenas/total
+    OEE=A*P*Q*100.0
     return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
+            "avail_pct":round(A*100,2),"perf_pct":round(P*100,2),
+            "qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
 
 def promedio_oee_daily(path_daily):
     vals=[float(r.get("oee_dia_%","0") or 0) for r in leer_csv_dict(path_daily)] if os.path.exists(path_daily) else []
@@ -692,6 +712,21 @@ class LiveDashboard(ctk.CTkFrame):
         ax2.set_xlabel(""); ax2.set_ylabel("Piezas"); ax2.grid(True, axis="y", alpha=0.25)
         canvas2=FigureCanvasTkAgg(fig2, master=self.chart_today_frame)
         canvas2.draw(); canvas2.get_tk_widget().pack(fill="x", padx=8, pady=8); plt.close(fig2)
+
+        # Producción buenas por máquina (hoy)
+        goods=[]
+        for m in MACHINES:
+            a=acum_por_fecha(leer_csv_dict(m["oee_csv"]), hoy)
+            goods.append({"maquina":m["name"], "buenas":a["buenas"]})
+        df3=pd.DataFrame(goods)
+        fig3, ax3 = plt.subplots(figsize=(5.8,2.6), dpi=120)
+        sns.barplot(ax=ax3, data=df3, x="maquina", y="buenas")
+        for p in ax3.patches:
+            ax3.annotate(f"{int(p.get_height())}", (p.get_x()+p.get_width()/2, p.get_height()),
+                         ha="center", va="bottom", fontsize=9, xytext=(0,3), textcoords="offset points")
+        ax3.set_xlabel(""); ax3.set_ylabel("Buenas"); ax3.grid(True, axis="y", alpha=0.25)
+        canvas3=FigureCanvasTkAgg(fig3, master=self.chart_today_frame)
+        canvas3.draw(); canvas3.get_tk_widget().pack(fill="x", padx=8, pady=8); plt.close(fig3)
 
     def _refresh_now(self):
         self.clock_lbl.configure(text=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
