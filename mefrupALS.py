@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install customtkinter pillow tkcalendar
+#   pip install customtkinter pillow tkcalendar matplotlib seaborn
 
 import customtkinter as ctk
 import tkinter as tk
@@ -9,6 +9,11 @@ from PIL import Image
 from tkcalendar import Calendar
 import csv, os, logging, traceback, io
 from datetime import datetime, date, timedelta
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # ---------- rutas / const ----------
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -289,6 +294,7 @@ def resumen_rango_maquina(machine, desde, hasta):
     asegurar_archivos_maquina(machine)
     rows = leer_csv_dict(machine["oee_csv"])
     data = []
+    total_sum = scrap_sum = buenas_sum = 0
     for r in rows:
         f = r.get("fecha")
         if not f:
@@ -303,27 +309,38 @@ def resumen_rango_maquina(machine, desde, hasta):
         if total <= 0 or meta <= 0:
             continue
         buenas = max(0, total - scrap)
-        P = total / meta if meta > 0 else 0.0
-        Q = buenas / total if total > 0 else 0.0
-        oee = P * Q * 100.0
+        total_sum += total
+        scrap_sum += scrap
+        buenas_sum += buenas
         data.append({
             "fecha": f,
-            "total": total,
-            "scrap": scrap,
-            "buenas": buenas,
-            "oee": round(oee, 2)
+            "availability": _safe_float(r.get("availability_%", "0")),
+            "performance": _safe_float(r.get("performance_%", "0")),
+            "quality": _safe_float(r.get("quality_%", "0")),
+            "oee": _safe_float(r.get("oee_%", "0")),
         })
     if not data:
-        return {"total":0, "scrap":0, "buenas":0, "oee_prom":0.0}, []
-    total = sum(d["total"] for d in data)
-    scrap = sum(d["scrap"] for d in data)
-    buenas = sum(d["buenas"] for d in data)
+        return {
+            "total": 0,
+            "scrap": 0,
+            "buenas": 0,
+            "availability_prom": 0.0,
+            "performance_prom": 0.0,
+            "quality_prom": 0.0,
+            "oee_prom": 0.0,
+        }, []
     oee_prom = sum(d["oee"] for d in data) / len(data)
+    avail_prom = sum(d["availability"] for d in data) / len(data)
+    perf_prom = sum(d["performance"] for d in data) / len(data)
+    qual_prom = sum(d["quality"] for d in data) / len(data)
     stats = {
-        "total": total,
-        "scrap": scrap,
-        "buenas": buenas,
-        "oee_prom": round(oee_prom, 2)
+        "total": total_sum,
+        "scrap": scrap_sum,
+        "buenas": buenas_sum,
+        "availability_prom": round(avail_prom, 2),
+        "performance_prom": round(perf_prom, 2),
+        "quality_prom": round(qual_prom, 2),
+        "oee_prom": round(oee_prom, 2),
     }
     return stats, data
 
@@ -976,13 +993,12 @@ class ReportsView(ctk.CTkFrame):
         lbl.pack(anchor="w", padx=12, pady=(0, 8))
         return card, lbl
 
-    def _add_plotly_card(self, title: str, fig, row: int, col: int):
-        try:
-            img_bytes = fig.to_image(format="png", width=360, height=200)
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
-            return
-        image = Image.open(io.BytesIO(img_bytes))
+    def _add_plot_card(self, title: str, fig, row: int, col: int):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        image = Image.open(buf)
         ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(360, 200))
         card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
         card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
@@ -1032,28 +1048,50 @@ class ReportsView(ctk.CTkFrame):
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
-        try:
-            import plotly.graph_objects as go
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
-            return
+
+        sns.set_style("whitegrid")
 
         fechas = [d["fecha"] for d in data]
+        avail = [d["availability"] for d in data]
+        perf = [d["performance"] for d in data]
+        qual = [d["quality"] for d in data]
         oees = [d["oee"] for d in data]
-        buenas = [d["buenas"] for d in data]
-        scraps = [d["scrap"] for d in data]
 
-        fig_prod = go.Figure()
-        fig_prod.add_bar(x=fechas, y=buenas, name="Buenas", marker_color="#34c759")
-        fig_prod.add_bar(x=fechas, y=scraps, name="Scrap", marker_color="#ff3b30")
-        fig_prod.update_layout(barmode="stack", height=220, margin=dict(l=20, r=20, t=30, b=20), legend=dict(orientation="h", y=-0.2))
+        x = list(range(len(fechas)))
+        width = 0.25
 
-        fig_oee = go.Figure()
-        fig_oee.add_trace(go.Scatter(x=fechas, y=oees, mode="lines+markers", name="OEE", line=dict(color="#2563eb")))
-        fig_oee.update_layout(yaxis=dict(range=[0,100]), height=220, margin=dict(l=20, r=20, t=30, b=20))
+        fig_daily, ax = plt.subplots(figsize=(4, 2.2))
+        ax.bar([i - width for i in x], avail, width, label="Availability", color="#facc15")
+        ax.bar(x, perf, width, label="Effectivity", color="#22c55e")
+        ax.bar([i + width for i in x], qual, width, label="Quality rate", color="#ef4444")
+        sns.lineplot(x=x, y=oees, marker="o", ax=ax, color="#2563eb", label="OEE")
+        ax.set_ylabel("%")
+        ax.set_ylim(0, 100)
+        ax.set_xticks(x)
+        ax.set_xticklabels(fechas, rotation=45, ha="right")
+        ax.legend()
+        ax.grid(axis="y", linestyle="--", alpha=0.5)
+        fig_daily.tight_layout()
 
-        self._add_plotly_card("Producción", fig_prod, 0, 0)
-        self._add_plotly_card("OEE %", fig_oee, 0, 1)
+        fig_avg, ax = plt.subplots(figsize=(4, 2.2))
+        metrics = ["Availability", "Effectivity", "Quality rate", "OEE"]
+        values = [
+            stats["availability_prom"],
+            stats["performance_prom"],
+            stats["quality_prom"],
+            stats["oee_prom"],
+        ]
+        colors = ["#facc15", "#22c55e", "#ef4444", "#2563eb"]
+        bars = ax.barh(metrics, values, color=colors)
+        ax.bar_label(bars, fmt="%.0f%%", padding=3)
+        max_val = max(100, max(values) + 5)
+        ax.set_xlim(0, max_val)
+        ax.set_xlabel("%")
+        ax.grid(axis="x", linestyle="--", alpha=0.5)
+        fig_avg.tight_layout()
+
+        self._add_plot_card("Indicadores", fig_daily, 0, 0)
+        self._add_plot_card("Promedios", fig_avg, 0, 1)
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
