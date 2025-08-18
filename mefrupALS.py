@@ -918,35 +918,40 @@ class ReportsView(ctk.CTkFrame):
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
         try:
-            import seaborn as sns
-            from matplotlib.figure import Figure
-            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            import plotly.io as pio
+            try:
+                from tkinterweb import HtmlFrame
+            except Exception:
+                messagebox.showerror("Error graficando", "tkinterweb no está instalado")
+                return
 
-            sns.set_theme(style="whitegrid")
             fechas = [d["fecha"] for d in data]
             oees = [d["oee"] for d in data]
             buenas = [d["buenas"] for d in data]
             scraps = [d["scrap"] for d in data]
 
-            fig = Figure(figsize=(6, 5), dpi=100)
-            ax1 = fig.add_subplot(211)
-            sns.lineplot(x=fechas, y=oees, ax=ax1, marker="o", color="#007aff")
-            ax1.set_ylabel("OEE %")
-            ax1.set_xlabel("")
-            ax1.tick_params(axis="x", rotation=45)
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            fig.add_trace(go.Bar(x=fechas, y=buenas, name="Buenas", marker_color="#34c759"), secondary_y=False)
+            fig.add_trace(go.Bar(x=fechas, y=scraps, name="Scrap", marker_color="#ff3b30"), secondary_y=False)
+            fig.add_trace(
+                go.Scatter(x=fechas, y=oees, name="OEE", mode="lines+markers", line=dict(color="black")),
+                secondary_y=True,
+            )
+            fig.update_layout(
+                barmode="stack",
+                template="plotly_white",
+                margin=dict(l=40, r=40, t=40, b=40),
+                legend_title="",
+            )
+            fig.update_yaxes(title_text="Piezas", secondary_y=False)
+            fig.update_yaxes(title_text="OEE %", secondary_y=True, range=[0, 100])
 
-            ax2 = fig.add_subplot(212)
-            ax2.bar(fechas, buenas, label="Buenas", color="#34c759")
-            ax2.bar(fechas, scraps, bottom=buenas, label="Scrap", color="#ff3b30")
-            ax2.set_ylabel("Piezas")
-            ax2.set_xlabel("Fecha")
-            ax2.tick_params(axis="x", rotation=45)
-            ax2.legend()
-
-            fig.tight_layout()
-            canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(padx=20, pady=20)
+            html = pio.to_html(fig, full_html=False)
+            frame = HtmlFrame(self.chart_frame)
+            frame.set_html(html)
+            frame.pack(fill="both", expand=True, padx=20, pady=20)
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
