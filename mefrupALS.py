@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install customtkinter pillow tkcalendar
+#   pip install customtkinter pillow tkcalendar matplotlib seaborn
 
 import customtkinter as ctk
 import tkinter as tk
@@ -9,6 +9,11 @@ from PIL import Image
 from tkcalendar import Calendar
 import csv, os, logging, traceback, io
 from datetime import datetime, date, timedelta
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # ---------- rutas / const ----------
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -976,13 +981,12 @@ class ReportsView(ctk.CTkFrame):
         lbl.pack(anchor="w", padx=12, pady=(0, 8))
         return card, lbl
 
-    def _add_plotly_card(self, title: str, fig, row: int, col: int):
-        try:
-            img_bytes = fig.to_image(format="png", width=360, height=200)
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
-            return
-        image = Image.open(io.BytesIO(img_bytes))
+    def _add_plot_card(self, title: str, fig, row: int, col: int):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        image = Image.open(buf)
         ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(360, 200))
         card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
         card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
@@ -1032,28 +1036,35 @@ class ReportsView(ctk.CTkFrame):
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
-        try:
-            import plotly.graph_objects as go
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
-            return
+
+        sns.set_style("whitegrid")
 
         fechas = [d["fecha"] for d in data]
         oees = [d["oee"] for d in data]
         buenas = [d["buenas"] for d in data]
         scraps = [d["scrap"] for d in data]
 
-        fig_prod = go.Figure()
-        fig_prod.add_bar(x=fechas, y=buenas, name="Buenas", marker_color="#34c759")
-        fig_prod.add_bar(x=fechas, y=scraps, name="Scrap", marker_color="#ff3b30")
-        fig_prod.update_layout(barmode="stack", height=220, margin=dict(l=20, r=20, t=30, b=20), legend=dict(orientation="h", y=-0.2))
+        fig_prod, ax = plt.subplots(figsize=(4, 2.2))
+        ax.bar(fechas, buenas, label="Buenas", color="#22c55e")
+        ax.bar(fechas, scraps, bottom=buenas, label="Scrap", color="#ef4444")
+        ax.set_ylabel("Piezas")
+        ax.set_xticks(range(len(fechas)))
+        ax.set_xticklabels(fechas, rotation=45, ha="right")
+        ax.legend()
+        ax.grid(axis="y", linestyle="--", alpha=0.5)
+        fig_prod.tight_layout()
 
-        fig_oee = go.Figure()
-        fig_oee.add_trace(go.Scatter(x=fechas, y=oees, mode="lines+markers", name="OEE", line=dict(color="#2563eb")))
-        fig_oee.update_layout(yaxis=dict(range=[0,100]), height=220, margin=dict(l=20, r=20, t=30, b=20))
+        fig_oee, ax = plt.subplots(figsize=(4, 2.2))
+        sns.lineplot(x=fechas, y=oees, marker="o", ax=ax, color="#2563eb")
+        ax.set_ylabel("OEE %")
+        ax.set_ylim(0, 100)
+        ax.set_xticks(range(len(fechas)))
+        ax.set_xticklabels(fechas, rotation=45, ha="right")
+        ax.grid(axis="y", linestyle="--", alpha=0.5)
+        fig_oee.tight_layout()
 
-        self._add_plotly_card("Producción", fig_prod, 0, 0)
-        self._add_plotly_card("OEE %", fig_oee, 0, 1)
+        self._add_plot_card("Producción", fig_prod, 0, 0)
+        self._add_plot_card("OEE %", fig_oee, 0, 1)
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
