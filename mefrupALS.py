@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install customtkinter pillow tkcalendar
+#   pip install customtkinter pillow tkcalendar matplotlib seaborn
 
 import customtkinter as ctk
 import tkinter as tk
@@ -848,8 +848,9 @@ class ReportsView(ctk.CTkFrame):
         cal.pack(padx=14, pady=14)
         def choose():
             entry.delete(0,"end"); entry.insert(0, cal.get_date()); top.destroy()
-        tk.Button(top, text="Seleccionar", command=choose).pack(side="left", padx=10, pady=10)
-        tk.Button(top, text="Cerrar", command=top.destroy).pack(side="left", padx=10, pady=10)
+        ctk.CTkButton(top, text="Seleccionar", command=choose, width=100).pack(side="left", padx=10, pady=10)
+        ctk.CTkButton(top, text="Cerrar", command=top.destroy, width=100, fg_color="#E5E7EB",
+                      text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=10, pady=10)
 
     def _generar(self):
         mid=self.machine_var.get()
