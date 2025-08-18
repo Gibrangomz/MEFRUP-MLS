@@ -231,34 +231,32 @@ def resumen_hoy_maquina(machine, fecha_iso):
     # acumulados
     total = sum(parse_int_str(r.get("total_pzs","0")) for r in rows)
     scrap = sum(parse_int_str(r.get("scrap_pzs","0")) for r in rows)
-    buenas= max(0,total-scrap)
+    buenas = max(0, total - scrap)
+    # meta planeada almacenada
+    meta_oper = sum(parse_int_str(r.get("meta_oper_pzs", "0")) for r in rows)
     # tiempos
-    horas_sum = sum(_safe_float(r.get("horas_turno","0")) for r in rows)
+    horas_sum = sum(_safe_float(r.get("horas_turno", "0")) for r in rows)
     turno_seg = int(horas_sum * 3600)
-    paro_seg  = int(sum(_safe_float(r.get("tiempo_paro_min","0")) for r in rows) * 60)
-    oper_seg  = max(0, turno_seg - paro_seg)
-    # ciclo ideal promedio (último válido o promedio)
-    ciclos = [parse_int_str(r.get("ciclo_s","0")) for r in rows if parse_int_str(r.get("ciclo_s","0"))>0]
+    paro_seg = int(sum(_safe_float(r.get("tiempo_paro_min", "0")) for r in rows) * 60)
+    oper_seg = max(0, turno_seg - paro_seg)
+    # ciclo ideal (último válido)
+    ciclos = [parse_int_str(r.get("ciclo_s", "0")) for r in rows if parse_int_str(r.get("ciclo_s", "0")) > 0]
     ciclo_ideal = ciclos[-1] if ciclos else 0
 
-    # métricas con fallback
-    if turno_seg>0 and ciclo_ideal>0:
-        A = (oper_seg/turno_seg)
-        P = ((buenas*ciclo_ideal)/oper_seg) if oper_seg>0 else 0.0
-        Q = (buenas/total) if total>0 else 0.0
-        oee = A*P*Q*100.0
-        A*=100.0; P*=100.0; Q*=100.0
-    else:
-        # fallback a promedio de columnas A/P/Q/OEE si existen
-        A = sum(_safe_float(r.get("availability_%","0")) for r in rows) / max(1,len(rows))
-        P = sum(_safe_float(r.get("performance_%","0")) for r in rows) / max(1,len(rows))
-        Q = sum(_safe_float(r.get("quality_%","0")) for r in rows) / max(1,len(rows))
-        oee = sum(_safe_float(r.get("oee_%","0")) for r in rows) / max(1,len(rows))
+    A = (oper_seg / turno_seg) if turno_seg > 0 else None
+    P = (total / meta_oper) if meta_oper > 0 else None
+    Q = (buenas / total) if total > 0 else None
+    if None in (A, P, Q):
+        # fallback a promedios almacenados si faltan datos para calcular
+        n = max(1, len(rows))
+        A = sum(_safe_float(r.get("availability_%", "0")) for r in rows) / n / 100.0
+        P = sum(_safe_float(r.get("performance_%", "0")) for r in rows) / n / 100.0
+        Q = sum(_safe_float(r.get("quality_%", "0")) for r in rows) / n / 100.0
+    oee = A * P * Q * 100.0
+    A *= 100.0; P *= 100.0; Q *= 100.0
 
-    # meta operativa
-    meta_oper = int((oper_seg // ciclo_ideal) if ciclo_ideal>0 else 0)
     # ciclo real estimado
-    ciclo_real = (oper_seg/buenas) if buenas>0 else 0.0
+    ciclo_real = (oper_seg / buenas) if buenas > 0 else 0.0
     # último paro
     downs = [r for r in leer_csv_dict(machine["down_csv"]) if r.get("fecha")==fecha_iso]
     if downs:
@@ -270,10 +268,21 @@ def resumen_hoy_maquina(machine, fecha_iso):
             ultimo = f"{d.get('inicio_ts','')} -> {d.get('fin_ts','')}   ({d.get('motivo','')})"
     else:
         ultimo="-"
-    return dict(oee=round(oee,2),A=round(A,2),P=round(P,2),Q=round(Q,2),
-                total=total,buenas=buenas,scrap=scrap, meta=meta_oper,
-                ciclo_ideal=ciclo_ideal, ciclo_real=round(ciclo_real,2),
-                turno_seg=turno_seg, oper_seg=oper_seg, ultimo_paro=ultimo)
+    return dict(
+        oee=round(oee, 2),
+        A=round(A, 2),
+        P=round(P, 2),
+        Q=round(Q, 2),
+        total=total,
+        buenas=buenas,
+        scrap=scrap,
+        meta=int(meta_oper),
+        ciclo_ideal=ciclo_ideal,
+        ciclo_real=round(ciclo_real, 2),
+        turno_seg=turno_seg,
+        oper_seg=oper_seg,
+        ultimo_paro=ultimo,
+    )
 
 def resumen_rango_maquina(machine, desde, hasta):
     """Agrega métricas de producción en un rango de fechas."""
@@ -744,10 +753,12 @@ class LiveDashboard(ctk.CTkFrame):
 
 
         # por máquina y promedio de área
-        oees = []
+        total_area = scrap_area = meta_area = 0
         for m in MACHINES:
             r = resumen_hoy_maquina(m, hoy)
-            oees.append(r["oee"])
+            total_area += r["total"]
+            scrap_area += r["scrap"]
+            meta_area += r["meta"]
             card = self.cards[m["id"]]
             card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
             card["A"].configure(text=f"A {r['A']:.2f}%")
@@ -759,8 +770,11 @@ class LiveDashboard(ctk.CTkFrame):
                 card["wrap"].configure(fg_color=bg)
             except:
                 pass
-        if oees:
-            area_oee = sum(oees) / len(oees)
+        if total_area > 0 and meta_area > 0:
+            buenas_area = max(0, total_area - scrap_area)
+            P_area = total_area / meta_area
+            Q_area = buenas_area / total_area
+            area_oee = P_area * Q_area * 100.0
             self.lbl_area.configure(text=f"{area_oee:.2f} %")
         else:
             self.lbl_area.configure(text="0.00 %")
@@ -1411,18 +1425,25 @@ class App(ctk.CTk):
         # combinado área
         total_area = meta_area = scrap_area = 0
         for m in MACHINES:
-            r = acum_por_fecha(leer_csv_dict(m["oee_csv"]), f)
-            total_area += r["total"]; scrap_area += r["scrap"]; meta_area += r["meta_pzs"]
-        if total_area>0 and meta_area>0:
+            r = resumen_hoy_maquina(m, f)
+            total_area += r["total"]
+            scrap_area += r["scrap"]
+            meta_area += r["meta"]
+        if total_area > 0 and meta_area > 0:
             buenas_area = max(0, total_area - scrap_area)
-            P_area = total_area/meta_area
-            Q_area = buenas_area/total_area
-            OEE_area = P_area*Q_area*100.0
+            P_area = total_area / meta_area
+            Q_area = buenas_area / total_area
+            OEE_area = P_area * Q_area * 100.0
         else:
-            OEE_area=0.0
+            OEE_area = 0.0
         escribir_daily(DAILY_CSV_INJECTOR, f, OEE_area, total_area, scrap_area, meta_area)
 
         self._refrescar_dia(); self._refrescar_hist(); self._refrescar_global(); self._update_save_state()
+        if getattr(self, 'dashboard_page', None):
+            try:
+                self.dashboard_page._refresh_now()
+            except Exception:
+                logging.exception("Error al actualizar tablero en vivo")
         messagebox.showinfo("Guardado",
                             f"Máquina: {self.active_machine['name']}\n"
                             f"OEE {OEE:.2f}% (A {A:.2f}% | P {P:.2f}% | Q {Q:.2f}%)")
