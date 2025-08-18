@@ -776,44 +776,80 @@ class ReportsView(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#1c1c1e"))
         header.pack(fill="x", side="top")
-        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16,10), pady=10)
-        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold"))\
-            .pack(side="left", pady=10)
+        ctk.CTkButton(
+            header,
+            text="← Menú",
+            command=self.app.go_menu,
+            width=110,
+            corner_radius=10,
+            fg_color="#E5E7EB",
+            text_color="#111",
+            hover_color="#D1D5DB",
+        ).pack(side="left", padx=(16, 10), pady=10)
+        ctk.CTkLabel(
+            header,
+            text="Reportes de Producción",
+            font=ctk.CTkFont("Helvetica", 20, "bold"),
+        ).pack(side="left", pady=10)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        body = ctk.CTkFrame(self, fg_color=("#F5F5F7", "#121212"))
         body.pack(fill="both", expand=True, padx=40, pady=40)
-        body.grid_columnconfigure(1, weight=1)
-        body.grid_rowconfigure(5, weight=1)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(1, weight=1)
+
+        filtros = ctk.CTkFrame(body, corner_radius=12, fg_color=("white", "#1c1c1e"))
+        filtros.grid(row=0, column=0, sticky="ew", pady=(0, 20))
+        filtros.grid_columnconfigure(1, weight=1)
 
         opciones = [m["id"] for m in MACHINES]
         self.machine_var = tk.StringVar(value=opciones[0])
-        ctk.CTkLabel(body, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6)
-        ctk.CTkOptionMenu(body, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(filtros, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6, padx=12)
+        ctk.CTkOptionMenu(filtros, values=opciones, variable=self.machine_var).grid(
+            row=0, column=1, sticky="ew", padx=12
+        )
 
-        ctk.CTkLabel(body, text="Desde:").grid(row=1, column=0, sticky="w", pady=6)
-        r1=ctk.CTkFrame(body, fg_color="transparent")
-        r1.grid(row=1, column=1, sticky="w")
-        self.desde_entry=ctk.CTkEntry(r1, width=120)
+        ctk.CTkLabel(filtros, text="Desde:").grid(row=1, column=0, sticky="w", pady=6, padx=12)
+        r1 = ctk.CTkFrame(filtros, fg_color="transparent")
+        r1.grid(row=1, column=1, sticky="w", padx=12)
+        self.desde_entry = ctk.CTkEntry(r1, width=120)
         self.desde_entry.pack(side="left")
-        ctk.CTkButton(r1, text="📅", width=36, command=lambda:self._calendar_pick(self.desde_entry)).pack(side="left", padx=(6,0))
+        ctk.CTkButton(
+            r1,
+            text="📅",
+            width=36,
+            command=lambda: self._calendar_pick(self.desde_entry),
+        ).pack(side="left", padx=(6, 0))
 
-        ctk.CTkLabel(body, text="Hasta:").grid(row=2, column=0, sticky="w", pady=6)
-        r2=ctk.CTkFrame(body, fg_color="transparent")
-        r2.grid(row=2, column=1, sticky="w")
-        self.hasta_entry=ctk.CTkEntry(r2, width=120)
+        ctk.CTkLabel(filtros, text="Hasta:").grid(row=2, column=0, sticky="w", pady=6, padx=12)
+        r2 = ctk.CTkFrame(filtros, fg_color="transparent")
+        r2.grid(row=2, column=1, sticky="w", padx=12)
+        self.hasta_entry = ctk.CTkEntry(r2, width=120)
         self.hasta_entry.pack(side="left")
-        ctk.CTkButton(r2, text="📅", width=36, command=lambda:self._calendar_pick(self.hasta_entry)).pack(side="left", padx=(6,0))
+        ctk.CTkButton(
+            r2,
+            text="📅",
+            width=36,
+            command=lambda: self._calendar_pick(self.hasta_entry),
+        ).pack(side="left", padx=(6, 0))
 
-        ctk.CTkButton(body, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(20,10))
+        ctk.CTkButton(
+            filtros,
+            text="Generar",
+            command=self._generar,
+            corner_radius=10,
+            fg_color="#007aff",
+            hover_color="#0051a8",
+        ).grid(row=3, column=0, columnspan=2, pady=(14, 10))
 
-        self.stats_var=tk.StringVar(value="")
-        ctk.CTkLabel(body, textvariable=self.stats_var, justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0,10))
+        self.stats_var = tk.StringVar(value="")
+        ctk.CTkLabel(filtros, textvariable=self.stats_var, justify="left").grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 10)
+        )
 
-        self.chart_frame=ctk.CTkFrame(body, fg_color="white")
-        self.chart_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
+        self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
+        self.chart_frame.grid(row=1, column=0, sticky="nsew")
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
@@ -839,9 +875,12 @@ class ReportsView(ctk.CTkFrame):
             return
         desde=self.desde_entry.get().strip()
         hasta=self.hasta_entry.get().strip()
-        stats,data=resumen_rango_maquina(machine, desde, hasta)
-        self.stats_var.set(f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%")
-        for w in self.chart_frame.winfo_children(): w.destroy()
+        stats, data = resumen_rango_maquina(machine, desde, hasta)
+        self.stats_var.set(
+            f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%"
+        )
+        for w in self.chart_frame.winfo_children():
+            w.destroy()
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
@@ -849,16 +888,30 @@ class ReportsView(ctk.CTkFrame):
             import seaborn as sns
             from matplotlib.figure import Figure
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-            fechas=[d["fecha"] for d in data]
-            oees=[d["oee"] for d in data]
-            fig=Figure(figsize=(6,3), dpi=100)
-            ax=fig.add_subplot(111)
-            sns.lineplot(x=fechas, y=oees, ax=ax)
-            ax.set_ylabel("OEE %")
-            ax.set_xlabel("Fecha")
-            ax.tick_params(axis='x', rotation=45)
+
+            sns.set_theme(style="whitegrid")
+            fechas = [d["fecha"] for d in data]
+            oees = [d["oee"] for d in data]
+            buenas = [d["buenas"] for d in data]
+            scraps = [d["scrap"] for d in data]
+
+            fig = Figure(figsize=(7, 6), dpi=100)
+            ax1 = fig.add_subplot(211)
+            sns.lineplot(x=fechas, y=oees, ax=ax1, marker="o", color="#007aff")
+            ax1.set_ylabel("OEE %")
+            ax1.set_xlabel("")
+            ax1.tick_params(axis="x", rotation=45)
+
+            ax2 = fig.add_subplot(212)
+            ax2.bar(fechas, buenas, label="Buenas", color="#34c759")
+            ax2.bar(fechas, scraps, bottom=buenas, label="Scrap", color="#ff3b30")
+            ax2.set_ylabel("Piezas")
+            ax2.set_xlabel("Fecha")
+            ax2.tick_params(axis="x", rotation=45)
+            ax2.legend()
+
             fig.tight_layout()
-            canvas=FigureCanvasTkAgg(fig, master=self.chart_frame)
+            canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
             canvas.draw()
             canvas.get_tk_widget().pack(fill="both", expand=True)
         except Exception as e:
@@ -912,8 +965,11 @@ class App(ctk.CTk):
         super().__init__()
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
         self.title("Mefrup — ALS")
-        try: self.state("zoomed")
-        except: self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}")
+        try:
+            self.state("zoomed")
+        except:
+            self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}")
+        self.configure(fg_color="#F5F5F7")
 
         self._error_showing=False
         self._update_job=None
