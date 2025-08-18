@@ -744,10 +744,12 @@ class LiveDashboard(ctk.CTkFrame):
 
 
         # por máquina y promedio de área
-        oees = []
+        total_area = scrap_area = meta_area = 0
         for m in MACHINES:
             r = resumen_hoy_maquina(m, hoy)
-            oees.append(r["oee"])
+            total_area += r["total"]
+            scrap_area += r["scrap"]
+            meta_area += r["meta"]
             card = self.cards[m["id"]]
             card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
             card["A"].configure(text=f"A {r['A']:.2f}%")
@@ -759,8 +761,11 @@ class LiveDashboard(ctk.CTkFrame):
                 card["wrap"].configure(fg_color=bg)
             except:
                 pass
-        if oees:
-            area_oee = sum(oees) / len(oees)
+        if total_area > 0 and meta_area > 0:
+            buenas_area = max(0, total_area - scrap_area)
+            P_area = total_area / meta_area
+            Q_area = buenas_area / total_area
+            area_oee = P_area * Q_area * 100.0
             self.lbl_area.configure(text=f"{area_oee:.2f} %")
         else:
             self.lbl_area.configure(text="0.00 %")
@@ -1423,6 +1428,11 @@ class App(ctk.CTk):
         escribir_daily(DAILY_CSV_INJECTOR, f, OEE_area, total_area, scrap_area, meta_area)
 
         self._refrescar_dia(); self._refrescar_hist(); self._refrescar_global(); self._update_save_state()
+        if getattr(self, 'dashboard_page', None):
+            try:
+                self.dashboard_page._refresh_now()
+            except Exception:
+                logging.exception("Error al actualizar tablero en vivo")
         messagebox.showinfo("Guardado",
                             f"Máquina: {self.active_machine['name']}\n"
                             f"OEE {OEE:.2f}% (A {A:.2f}% | P {P:.2f}% | Q {Q:.2f}%)")
