@@ -864,98 +864,47 @@ class ReportsView(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
-# ---------- Reportes ----------
-class ReportsView(ctk.CTkFrame):
-    def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent")
-        self.app = app
-        self._build()
-
-    def _build(self):
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
-        header.pack(fill="x", side="top")
-        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16,10), pady=10)
-        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold"))\
-            .pack(side="left", pady=10)
-
-        body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=40, pady=40)
-        body.grid_columnconfigure(1, weight=1)
-
-        opciones = [m["id"] for m in MACHINES]
-        self.machine_var = tk.StringVar(value=opciones[0])
-        ctk.CTkLabel(body, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6)
-        ctk.CTkOptionMenu(body, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w")
-
-        ctk.CTkLabel(body, text="Desde (AAAA-MM-DD):").grid(row=1, column=0, sticky="w", pady=6)
-        self.desde_entry = ctk.CTkEntry(body)
-        self.desde_entry.grid(row=1, column=1, sticky="w")
-
-        ctk.CTkLabel(body, text="Hasta (AAAA-MM-DD):").grid(row=2, column=0, sticky="w", pady=6)
-        self.hasta_entry = ctk.CTkEntry(body)
-        self.hasta_entry.grid(row=2, column=1, sticky="w")
-
-        ctk.CTkButton(body, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(20,0))
-
-    def _generar(self):
-        mid = self.machine_var.get()
-        machine = next((m for m in MACHINES if m["id"] == mid), None)
-        if not machine:
-            messagebox.showerror("Error", "Máquina inválida")
-            return
-        desde = self.desde_entry.get().strip()
-        hasta = self.hasta_entry.get().strip()
-        stats, data = resumen_rango_maquina(machine, desde, hasta)
-        messagebox.showinfo(
-            "Reporte",
-            f"Total: {stats['total']}\nBuenas: {stats['buenas']}\nScrap: {stats['scrap']}\nOEE Promedio: {stats['oee_prom']:.2f}%"
-        )
-        try:
-            import seaborn as sns
-            import matplotlib.pyplot as plt
-            fechas = [d["fecha"] for d in data]
-            oees = [d["oee"] for d in data]
-            plt.figure(figsize=(8,4))
-            sns.lineplot(x=fechas, y=oees)
-            plt.xticks(rotation=45)
-            plt.ylabel("OEE %")
-            plt.tight_layout()
-            plt.show()
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
-
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
 
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
-        box=ctk.CTkFrame(self, corner_radius=20); box.pack(expand=True, fill="both", padx=40, pady=40)
+        box = ctk.CTkFrame(self, corner_radius=20)
+        box.pack(expand=True, fill="both", padx=40, pady=40)
+
         try:
-            img=Image.open(LOGO_PATH); logo=ctk.CTkImage(light_image=img, dark_image=img, size=(240,96))
-            ctk.CTkLabel(box, image=logo, text="").pack(pady=(30,10)); self.logo=logo
+            img = Image.open(LOGO_PATH)
+            logo = ctk.CTkImage(light_image=img, dark_image=img, size=(240, 96))
+            ctk.CTkLabel(box, image=logo, text="").pack(pady=(30, 10))
+            self.logo = logo
         except:
-            ctk.CTkLabel(box, text="MEFRUP", font=ctk.CTkFont("Helvetica",36,"bold")).pack(pady=(50,10))
-        ctk.CTkLabel(box, text="Mefrup MLS", font=ctk.CTkFont("Helvetica",28,"bold")).pack(pady=(0,6))
-        ctk.CTkLabel(box, text="Sistema de Monitoreo y Producción", font=ctk.CTkFont("Helvetica",14)).pack(pady=(0,20))
-        ctk.CTkButton(box, text="Tablero en vivo (Área Inyección)", height=48, corner_radius=14,
-                      command=app.go_dashboard).pack(pady=(0,12), ipadx=20)
-        ctk.CTkButton(box, text="OEE y Registro de Producción", height=48, corner_radius=14,
-                      command=app.go_oee_select_machine).pack(pady=(0,12), ipadx=20)
-        ctk.CTkButton(box, text="Recetas (Moldes/Partes)", height=44, corner_radius=14,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
-                      command=app.go_recipes).pack(pady=(0,8), ipadx=20)
+            ctk.CTkLabel(box, text="MEFRUP", font=ctk.CTkFont("Helvetica", 36, "bold"))\
+                .pack(pady=(50, 10))
 
-        ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
-                      command=app.go_planning).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Tablero de Órdenes (Progreso)", height=44, corner_radius=14,
-                      command=app.go_orders_board).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Reportes de Producción", height=44, corner_radius=14,
-                      command=app.go_reports).pack(pady=(0,8), ipadx=20)
-        # NUEVO
-        ctk.CTkButton(box, text="Salida de Piezas (Embarques)", height=44, corner_radius=14,
-                      command=app.go_shipments).pack(pady=(0,8), ipadx=20)
+        ctk.CTkLabel(box, text="Mefrup MLS", font=ctk.CTkFont("Helvetica", 28, "bold"))\
+            .pack(pady=(0, 6))
+        ctk.CTkLabel(box, text="Sistema de Monitoreo y Producción",
+                      font=ctk.CTkFont("Helvetica", 14)).pack(pady=(0, 20))
 
+        btn_frame = ctk.CTkFrame(box, fg_color="transparent")
+        btn_frame.pack(expand=True, fill="both")
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        btns = [
+            {"text": "Tablero en vivo (Área Inyección)", "command": app.go_dashboard, "height": 48},
+            {"text": "OEE y Registro de Producción", "command": app.go_oee_select_machine, "height": 48},
+            {"text": "Recetas (Moldes/Partes)", "command": app.go_recipes, "height": 44,
+             "fg_color": "#E5E7EB", "text_color": "#111", "hover_color": "#D1D5DB"},
+            {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
+            {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
+            {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
+            {"text": "Salida de Piezas (Embarques)", "command": app.go_shipments, "height": 44},
+        ]
+
+        for i, kwargs in enumerate(btns):
+            r, c = divmod(i, 2)
+            ctk.CTkButton(btn_frame, corner_radius=14, **kwargs)\
+                .grid(row=r, column=c, padx=8, pady=8, sticky="ew")
 
 # ---------- App ----------
 class App(ctk.CTk):
@@ -1003,15 +952,6 @@ class App(ctk.CTk):
         self.choose_page = None
         self.oee_pages = {}  # id->OEEView
         self.machine_context = {}
-
-        self.dashboard_page = None
-
-        # planificación
-        self.planning_page = None
-        self.orders_board_page = None
-        self.reports_page = None
-        self.shipments_page = None
-        self._shipments_preselect_order = None
 
         self.dashboard_page = None
 
