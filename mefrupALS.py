@@ -139,15 +139,16 @@ def calcular_metricas(total, scrap, turno_seg, oper_seg, ciclo_ideal_s):
     return buenas, round(A*100,2), round(P*100,2), round(Q*100,2), round(OEE,2)
 
 def acum_por_fecha(rows, fecha_iso):
-    total=scrap=0; meta=0.0; n=0
+    total = scrap = 0
+    meta = 0.0
+    n = 0
     for r in rows:
-        if r.get("fecha")!=fecha_iso: continue
-        try:
-            total+=int(float(r.get("total_pzs","0")))
-            scrap+=int(float(r.get("scrap_pzs","0")))
-            meta +=float(r.get("meta_oper_pzs","0"))
-            n+=1
-        except: pass
+        if r.get("fecha") != fecha_iso:
+            continue
+        total += parse_int_str(r.get("total_pzs", "0"))
+        scrap += parse_int_str(r.get("scrap_pzs", "0"))
+        meta += _safe_float(r.get("meta_oper_pzs", "0"))
+        n += 1
     if total<=0 or meta<=0:
         return {"count":n,"total":total,"scrap":scrap,"buenas":max(0,total-scrap),
                 "perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
@@ -157,15 +158,17 @@ def acum_por_fecha(rows, fecha_iso):
             "oee_pct":round(OEE,2),"meta_pzs":meta}
 
 def acum_global(rows):
-    total=scrap=0; meta=0.0; n=0; dias=set()
+    total = scrap = 0
+    meta = 0.0
+    n = 0
+    dias = set()
     for r in rows:
-        try:
-            total+=int(float(r.get("total_pzs","0")))
-            scrap+=int(float(r.get("scrap_pzs","0")))
-            meta +=float(r.get("meta_oper_pzs","0"))
-            n+=1
-            if r.get("fecha"): dias.add(r["fecha"])
-        except: pass
+        total += parse_int_str(r.get("total_pzs", "0"))
+        scrap += parse_int_str(r.get("scrap_pzs", "0"))
+        meta += _safe_float(r.get("meta_oper_pzs", "0"))
+        n += 1
+        if r.get("fecha"):
+            dias.add(r["fecha"])
     if total<=0 or meta<=0:
         return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,
                 "buenas":max(0,total-scrap),"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
@@ -174,7 +177,8 @@ def acum_global(rows):
             "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
 
 def promedio_oee_daily(path_daily):
-    vals=[float(r.get("oee_dia_%","0") or 0) for r in leer_csv_dict(path_daily)] if os.path.exists(path_daily) else []
+    rows = leer_csv_dict(path_daily) if os.path.exists(path_daily) else []
+    vals = [_safe_float(r.get("oee_dia_%", 0)) for r in rows]
     return round(sum(vals)/len(vals),2) if vals else 0.0
 
 def dia_semana_es(f):
@@ -268,6 +272,49 @@ def resumen_hoy_maquina(machine, fecha_iso):
                 total=total,buenas=buenas,scrap=scrap, meta=meta_oper,
                 ciclo_ideal=ciclo_ideal, ciclo_real=round(ciclo_real,2),
                 turno_seg=turno_seg, oper_seg=oper_seg, ultimo_paro=ultimo)
+
+def resumen_rango_maquina(machine, desde, hasta):
+    """Agrega métricas de producción en un rango de fechas."""
+    asegurar_archivos_maquina(machine)
+    rows = leer_csv_dict(machine["oee_csv"])
+    data = []
+    for r in rows:
+        f = r.get("fecha")
+        if not f:
+            continue
+        if desde and f < desde:
+            continue
+        if hasta and f > hasta:
+            continue
+        total = parse_int_str(r.get("total_pzs", "0"))
+        scrap = parse_int_str(r.get("scrap_pzs", "0"))
+        meta = _safe_float(r.get("meta_oper_pzs", "0"))
+        if total <= 0 or meta <= 0:
+            continue
+        buenas = max(0, total - scrap)
+        P = total / meta if meta > 0 else 0.0
+        Q = buenas / total if total > 0 else 0.0
+        oee = P * Q * 100.0
+        data.append({
+            "fecha": f,
+            "total": total,
+            "scrap": scrap,
+            "buenas": buenas,
+            "oee": round(oee, 2)
+        })
+    if not data:
+        return {"total":0, "scrap":0, "buenas":0, "oee_prom":0.0}, []
+    total = sum(d["total"] for d in data)
+    scrap = sum(d["scrap"] for d in data)
+    buenas = sum(d["buenas"] for d in data)
+    oee_prom = sum(d["oee"] for d in data) / len(data)
+    stats = {
+        "total": total,
+        "scrap": scrap,
+        "buenas": buenas,
+        "oee_prom": round(oee_prom, 2)
+    }
+    return stats, data
 
 # ---------- Vistas ----------
 class RecipesView(ctk.CTkFrame):
@@ -693,36 +740,126 @@ class LiveDashboard(ctk.CTkFrame):
         self.clock_lbl.configure(text=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
         hoy = date.today().isoformat()
 
-        # combinado área (recalcular vivo)
-        total_area = meta_area = scrap_area = 0
-        for m in MACHINES:
-            r = acum_por_fecha(leer_csv_dict(m["oee_csv"]), hoy)
-            total_area += r["total"]; scrap_area += r["scrap"]; meta_area += r["meta_pzs"]
-        if total_area>0 and meta_area>0:
-            buenas = max(0,total_area-scrap_area)
-            P = total_area/meta_area
-            Q = buenas/total_area
-            oee = P*Q*100.0
-            self.lbl_area.configure(text=f"{oee:.2f} %")
-        else:
-            self.lbl_area.configure(text="0.00 %")
-
-        # por máquina
+        # por máquina y promedio de área
+        oees = []
         for m in MACHINES:
             r = resumen_hoy_maquina(m, hoy)
+            oees.append(r["oee"])
             card = self.cards[m["id"]]
             card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
             card["A"].configure(text=f"A {r['A']:.2f}%")
             card["P"].configure(text=f"P {r['P']:.2f}%")
             card["Q"].configure(text=f"Q {r['Q']:.2f}%")
             card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
-            # color del card por OEE
             bg, fg = self._tone(r["oee"])
-            try: card["wrap"].configure(fg_color=bg)
-            except: pass
+            try:
+                card["wrap"].configure(fg_color=bg)
+            except:
+                pass
+        if oees:
+            area_oee = sum(oees) / len(oees)
+            self.lbl_area.configure(text=f"{area_oee:.2f} %")
+        else:
+            self.lbl_area.configure(text="0.00 %")
 
         if self._timer: self.after_cancel(self._timer)
         self._timer = self.after(DASH_REFRESH_MS, self._refresh_now)
+
+# ---------- Reportes ----------
+class ReportsView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self._build()
+
+    def _build(self):
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
+        header.pack(fill="x", side="top")
+        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
+                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16,10), pady=10)
+        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold"))\
+            .pack(side="left", pady=10)
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=40, pady=40)
+        body.grid_columnconfigure(1, weight=1)
+        body.grid_rowconfigure(5, weight=1)
+
+        opciones = [m["id"] for m in MACHINES]
+        self.machine_var = tk.StringVar(value=opciones[0])
+        ctk.CTkLabel(body, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6)
+        ctk.CTkOptionMenu(body, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w")
+
+        ctk.CTkLabel(body, text="Desde:").grid(row=1, column=0, sticky="w", pady=6)
+        r1=ctk.CTkFrame(body, fg_color="transparent")
+        r1.grid(row=1, column=1, sticky="w")
+        self.desde_entry=ctk.CTkEntry(r1, width=120)
+        self.desde_entry.pack(side="left")
+        ctk.CTkButton(r1, text="📅", width=36, command=lambda:self._calendar_pick(self.desde_entry)).pack(side="left", padx=(6,0))
+
+        ctk.CTkLabel(body, text="Hasta:").grid(row=2, column=0, sticky="w", pady=6)
+        r2=ctk.CTkFrame(body, fg_color="transparent")
+        r2.grid(row=2, column=1, sticky="w")
+        self.hasta_entry=ctk.CTkEntry(r2, width=120)
+        self.hasta_entry.pack(side="left")
+        ctk.CTkButton(r2, text="📅", width=36, command=lambda:self._calendar_pick(self.hasta_entry)).pack(side="left", padx=(6,0))
+
+        ctk.CTkButton(body, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(20,10))
+
+        self.stats_var=tk.StringVar(value="")
+        ctk.CTkLabel(body, textvariable=self.stats_var, justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0,10))
+
+        self.chart_frame=ctk.CTkFrame(body, fg_color="white")
+        self.chart_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
+
+    def _calendar_pick(self, entry: ctk.CTkEntry):
+        try:
+            y,m,d=map(int,(entry.get() or date.today().isoformat()).split("-"))
+            init=date(y,m,d)
+        except:
+            init=date.today()
+        top=tk.Toplevel(self); top.title("Selecciona fecha"); top.transient(self); top.grab_set(); top.resizable(False,False)
+        self.update_idletasks()
+        top.geometry(f"+{self.winfo_rootx()+self.winfo_width()//2-180}+{self.winfo_rooty()+self.winfo_height()//2-170}")
+        cal=Calendar(top, selectmode="day", year=init.year, month=init.month, day=init.day, date_pattern="yyyy-mm-dd", firstweekday="monday", showweeknumbers=False)
+        cal.pack(padx=14, pady=14)
+        def choose():
+            entry.delete(0,"end"); entry.insert(0, cal.get_date()); top.destroy()
+        tk.Button(top, text="Seleccionar", command=choose).pack(side="left", padx=10, pady=10)
+        tk.Button(top, text="Cerrar", command=top.destroy).pack(side="left", padx=10, pady=10)
+
+    def _generar(self):
+        mid=self.machine_var.get()
+        machine=next((m for m in MACHINES if m["id"]==mid), None)
+        if not machine:
+            messagebox.showerror("Error","Máquina inválida")
+            return
+        desde=self.desde_entry.get().strip()
+        hasta=self.hasta_entry.get().strip()
+        stats,data=resumen_rango_maquina(machine, desde, hasta)
+        self.stats_var.set(f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%")
+        for w in self.chart_frame.winfo_children(): w.destroy()
+        if not data:
+            ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
+            return
+        try:
+            import seaborn as sns
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            fechas=[d["fecha"] for d in data]
+            oees=[d["oee"] for d in data]
+            fig=Figure(figsize=(6,3), dpi=100)
+            ax=fig.add_subplot(111)
+            sns.lineplot(x=fechas, y=oees, ax=ax)
+            ax.set_ylabel("OEE %")
+            ax.set_xlabel("Fecha")
+            ax.tick_params(axis='x', rotation=45)
+            fig.tight_layout()
+            canvas=FigureCanvasTkAgg(fig, master=self.chart_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="both", expand=True)
+        except Exception as e:
+            messagebox.showerror("Error graficando", str(e))
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
@@ -747,6 +884,8 @@ class MainMenu(ctk.CTkFrame):
                       command=app.go_planning).pack(pady=(0,8), ipadx=20)
         ctk.CTkButton(box, text="Tablero de Órdenes (Progreso)", height=44, corner_radius=14,
                       command=app.go_orders_board).pack(pady=(0,8), ipadx=20)
+        ctk.CTkButton(box, text="Reportes de Producción", height=44, corner_radius=14,
+                      command=app.go_reports).pack(pady=(0,8), ipadx=20)
         # NUEVO
         ctk.CTkButton(box, text="Salida de Piezas (Embarques)", height=44, corner_radius=14,
                       command=app.go_shipments).pack(pady=(0,8), ipadx=20)
@@ -802,6 +941,7 @@ class App(ctk.CTk):
         # planificación
         self.planning_page = None
         self.orders_board_page = None
+        self.reports_page = None
         self.shipments_page = None
         self._shipments_preselect_order = None
 
@@ -817,6 +957,7 @@ class App(ctk.CTk):
         self.recipes_page=RecipesView(self.container, self)
         self.choose_page=MachineChooser(self.container, self)
         self.dashboard_page=LiveDashboard(self.container, self)
+        self.reports_page=ReportsView(self.container, self)
 
         self._refresh_moldes_from_recipes()
         self.go_menu()
@@ -880,6 +1021,11 @@ class App(ctk.CTk):
         if not self.orders_board_page:
             self.orders_board_page = OrdersBoardView(self.container, self)
         self._pack_only(self.orders_board_page)
+
+    def go_reports(self):
+        if not self.reports_page:
+            self.reports_page = ReportsView(self.container, self)
+        self._pack_only(self.reports_page)
 
     def go_shipments(self, preselect_order: str|None=None):
         self._shipments_preselect_order = preselect_order
