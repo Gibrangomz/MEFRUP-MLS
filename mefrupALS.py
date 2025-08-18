@@ -37,7 +37,8 @@ RECIPES_CSV = os.path.join(BASE_DIR, "recipes.csv")
 LOGO_PATH   = os.path.join(BASE_DIR, "10b41fef-97af-4e79-90c4-b496e0dd3197.png")
 
 # planificación y milestones
-PLANNING_CSV = os.path.join(BASE_DIR, "planning.csv")   # orden, parte, molde_id, maquina_id, qty_total, inicio_ts, fin_est_ts, setup_min, estado, ciclo_s, cav_on
+PLANNING_CSV = os.path.join(BASE_DIR, "planning.csv")   # orden, parte, molde_id, maquina_id, qty_total,
+# inicio_ts, fin_est_ts, setup_min, estado, ciclo_s, cav_on
 DELIV_CSV    = os.path.join(BASE_DIR, "deliveries.csv") # orden, due_date, qty, cumplido(0/1)
 
 # NUEVO: salidas / embarques
