@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from PIL import Image
 from tkcalendar import Calendar
-import csv, os, logging, traceback
+import csv, os, logging, traceback, io
 from datetime import datetime, date, timedelta
 
 # ---------- rutas / const ----------
@@ -871,6 +871,7 @@ class ReportsView(ctk.CTkFrame):
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
         self.app = app
+        self._plot_imgs = []
         self._build()
 
     def _build(self):
@@ -957,6 +958,7 @@ class ReportsView(ctk.CTkFrame):
 
         self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
         self.chart_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 20))
+        self.chart_frame.grid_columnconfigure((0, 1), weight=1)
 
     def _tone(self, oee: float):
         if oee >= 85:
@@ -973,6 +975,25 @@ class ReportsView(ctk.CTkFrame):
         lbl = ctk.CTkLabel(card, text="0", font=ctk.CTkFont("Helvetica", 20, "bold"))
         lbl.pack(anchor="w", padx=12, pady=(0, 8))
         return card, lbl
+
+    def _add_plotly_card(self, title: str, fig, row: int, col: int):
+        try:
+            img_bytes = fig.to_image(format="png", width=360, height=200)
+        except Exception as e:
+            messagebox.showerror("Error graficando", str(e))
+            return
+        image = Image.open(io.BytesIO(img_bytes))
+        ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(360, 200))
+        card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
+        card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
+        self.chart_frame.grid_rowconfigure(row, weight=1)
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont("Helvetica", 14, "bold")).pack(
+            anchor="w", padx=12, pady=(8, 0)
+        )
+        lbl = ctk.CTkLabel(card, image=ctk_img, text="")
+        lbl.image = ctk_img
+        lbl.pack(padx=12, pady=(0, 12))
+        self._plot_imgs.append(ctk_img)
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
@@ -1007,12 +1028,12 @@ class ReportsView(ctk.CTkFrame):
 
         for w in self.chart_frame.winfo_children():
             w.destroy()
+        self._plot_imgs.clear()
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
         try:
-            import matplotlib.pyplot as plt
-            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import plotly.graph_objects as go
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
             return
@@ -1022,43 +1043,17 @@ class ReportsView(ctk.CTkFrame):
         buenas = [d["buenas"] for d in data]
         scraps = [d["scrap"] for d in data]
 
-        try:
-            self.chart_frame.update_idletasks()
-            dpi = 100
-            avail_w = max(self.chart_frame.winfo_width() - 80, 400)
-            avail_h = max(self.chart_frame.winfo_height() - 80, 300)
-            fig, ax1 = plt.subplots(
-                figsize=(avail_w / dpi, avail_h / dpi), dpi=dpi, constrained_layout=True
-            )
-            ax2 = ax1.twinx()
+        fig_prod = go.Figure()
+        fig_prod.add_bar(x=fechas, y=buenas, name="Buenas", marker_color="#34c759")
+        fig_prod.add_bar(x=fechas, y=scraps, name="Scrap", marker_color="#ff3b30")
+        fig_prod.update_layout(barmode="stack", height=220, margin=dict(l=20, r=20, t=30, b=20), legend=dict(orientation="h", y=-0.2))
 
-            positions = list(range(len(fechas)))
-            bar_width = 0.6
-            ax1.bar(positions, buenas, width=bar_width, label="Buenas", color="#34c759")
-            ax1.bar(
-                positions,
-                scraps,
-                width=bar_width,
-                bottom=buenas,
-                label="Scrap",
-                color="#ff3b30",
-            )
-            ax2.plot(positions, oees, label="OEE", color="black", marker="o")
-            ax1.set_xticks(positions)
-            ax1.set_xticklabels(fechas)
-            ax1.set_ylabel("Piezas")
-            ax2.set_ylabel("OEE %")
-            ax2.set_ylim(0, 100)
-            ax1.margins(x=0.05)
-            handles1, labels1 = ax1.get_legend_handles_labels()
-            handles2, labels2 = ax2.get_legend_handles_labels()
-            fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left")
-            canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True, padx=40, pady=40)
-            plt.close(fig)
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
+        fig_oee = go.Figure()
+        fig_oee.add_trace(go.Scatter(x=fechas, y=oees, mode="lines+markers", name="OEE", line=dict(color="#2563eb")))
+        fig_oee.update_layout(yaxis=dict(range=[0,100]), height=220, margin=dict(l=20, r=20, t=30, b=20))
+
+        self._add_plotly_card("Producción", fig_prod, 0, 0)
+        self._add_plotly_card("OEE %", fig_oee, 0, 1)
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
