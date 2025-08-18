@@ -956,7 +956,7 @@ class ReportsView(ctk.CTkFrame):
         self.card_oee.grid(row=0, column=3, sticky="nsew", padx=6, pady=6)
 
         self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
-        self.chart_frame.grid(row=2, column=0, sticky="nsew")
+        self.chart_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 20))
 
     def _tone(self, oee: float):
         if oee >= 85:
@@ -1024,23 +1024,38 @@ class ReportsView(ctk.CTkFrame):
 
         try:
             self.chart_frame.update_idletasks()
-            w = max(self.chart_frame.winfo_width() - 40, 400) / 100
-            h = max(self.chart_frame.winfo_height() - 40, 300) / 100
-            fig, ax1 = plt.subplots(figsize=(w, h))
+            dpi = 100
+            avail_w = max(self.chart_frame.winfo_width() - 80, 400)
+            avail_h = max(self.chart_frame.winfo_height() - 80, 300)
+            fig, ax1 = plt.subplots(
+                figsize=(avail_w / dpi, avail_h / dpi), dpi=dpi, constrained_layout=True
+            )
             ax2 = ax1.twinx()
-            ax1.bar(fechas, buenas, label="Buenas", color="#34c759")
-            ax1.bar(fechas, scraps, bottom=buenas, label="Scrap", color="#ff3b30")
-            ax2.plot(fechas, oees, label="OEE", color="black", marker="o")
+
+            positions = list(range(len(fechas)))
+            bar_width = 0.6
+            ax1.bar(positions, buenas, width=bar_width, label="Buenas", color="#34c759")
+            ax1.bar(
+                positions,
+                scraps,
+                width=bar_width,
+                bottom=buenas,
+                label="Scrap",
+                color="#ff3b30",
+            )
+            ax2.plot(positions, oees, label="OEE", color="black", marker="o")
+            ax1.set_xticks(positions)
+            ax1.set_xticklabels(fechas)
             ax1.set_ylabel("Piezas")
             ax2.set_ylabel("OEE %")
             ax2.set_ylim(0, 100)
-            fig.tight_layout()
+            ax1.margins(x=0.05)
             handles1, labels1 = ax1.get_legend_handles_labels()
             handles2, labels2 = ax2.get_legend_handles_labels()
             fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left")
             canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
             canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=20)
+            canvas.get_tk_widget().pack(fill="both", expand=True, padx=40, pady=40)
             plt.close(fig)
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
