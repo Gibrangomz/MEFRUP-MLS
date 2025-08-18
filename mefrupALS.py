@@ -176,6 +176,42 @@ def acum_global(rows):
     return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,"buenas":buenas,
             "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
 
+def acum_por_fecha(rows, fecha_iso):
+    total=scrap=0; meta=0.0; n=0
+    for r in rows:
+        if r.get("fecha")!=fecha_iso: continue
+        try:
+            total+=int(float(r.get("total_pzs","0")))
+            scrap+=int(float(r.get("scrap_pzs","0")))
+            meta +=float(r.get("meta_oper_pzs","0"))
+            n+=1
+        except: pass
+    if total<=0 or meta<=0:
+        return {"count":n,"total":total,"scrap":scrap,"buenas":max(0,total-scrap),
+                "perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
+    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
+    return {"count":n,"total":total,"scrap":scrap,"buenas":buenas,
+            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),
+            "oee_pct":round(OEE,2),"meta_pzs":meta}
+
+def acum_global(rows):
+    total=scrap=0; meta=0.0; n=0; dias=set()
+    for r in rows:
+        try:
+            total+=int(float(r.get("total_pzs","0")))
+            scrap+=int(float(r.get("scrap_pzs","0")))
+            meta +=float(r.get("meta_oper_pzs","0"))
+            n+=1
+            if r.get("fecha"): dias.add(r["fecha"])
+        except: pass
+    if total<=0 or meta<=0:
+        return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,
+                "buenas":max(0,total-scrap),"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
+    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
+    return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,"buenas":buenas,
+            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
+
+
 def promedio_oee_daily(path_daily):
     rows = leer_csv_dict(path_daily) if os.path.exists(path_daily) else []
     vals = [_safe_float(r.get("oee_dia_%", 0)) for r in rows]
