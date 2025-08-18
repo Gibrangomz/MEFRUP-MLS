@@ -797,7 +797,7 @@ class ReportsView(ctk.CTkFrame):
         body = ctk.CTkFrame(self, fg_color=("#F5F5F7", "#121212"))
         body.pack(fill="both", expand=True, padx=40, pady=40)
         body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(1, weight=1)
+        body.grid_rowconfigure(2, weight=1)
 
         filtros = ctk.CTkFrame(body, corner_radius=12, fg_color=("white", "#1c1c1e"))
         filtros.grid(row=0, column=0, sticky="ew", pady=(0, 20))
@@ -843,13 +843,38 @@ class ReportsView(ctk.CTkFrame):
             hover_color="#0051a8",
         ).grid(row=3, column=0, columnspan=2, pady=(14, 10))
 
-        self.stats_var = tk.StringVar(value="")
-        ctk.CTkLabel(filtros, textvariable=self.stats_var, justify="left").grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 10)
-        )
+        # tarjetas de estadísticos
+        stats = ctk.CTkFrame(body, corner_radius=12, fg_color=("white", "#1c1c1e"))
+        stats.grid(row=1, column=0, sticky="ew", pady=(0, 20))
+        stats.grid_columnconfigure((0, 1, 2, 3), weight=1)
+
+        self.card_total, self.lbl_total = self._create_card(stats, "Total", ("#E5E7EB", "#2B2B2B"))
+        self.card_total.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.card_buenas, self.lbl_buenas = self._create_card(stats, "Buenas", ("#DCFCE7", "#065F46"))
+        self.card_buenas.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        self.card_scrap, self.lbl_scrap = self._create_card(stats, "Scrap", ("#FEE2E2", "#991B1B"))
+        self.card_scrap.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
+        self.card_oee, self.lbl_oee = self._create_card(stats, "OEE Prom", ("#FEF9C3", "#92400E"))
+        self.card_oee.grid(row=0, column=3, sticky="nsew", padx=6, pady=6)
 
         self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
-        self.chart_frame.grid(row=1, column=0, sticky="nsew")
+        self.chart_frame.grid(row=2, column=0, sticky="nsew")
+
+    def _tone(self, oee: float):
+        if oee >= 85:
+            return ("#DCFCE7", "#065F46")
+        if oee >= 60:
+            return ("#FEF9C3", "#92400E")
+        return ("#FEE2E2", "#991B1B")
+
+    def _create_card(self, parent, title: str, color):
+        card = ctk.CTkFrame(parent, corner_radius=12, fg_color=color)
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont("Helvetica", 14, "bold")).pack(
+            anchor="w", padx=12, pady=(8, 0)
+        )
+        lbl = ctk.CTkLabel(card, text="0", font=ctk.CTkFont("Helvetica", 20, "bold"))
+        lbl.pack(anchor="w", padx=12, pady=(0, 8))
+        return card, lbl
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
@@ -876,9 +901,12 @@ class ReportsView(ctk.CTkFrame):
         desde=self.desde_entry.get().strip()
         hasta=self.hasta_entry.get().strip()
         stats, data = resumen_rango_maquina(machine, desde, hasta)
-        self.stats_var.set(
-            f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%"
-        )
+        self.lbl_total.configure(text=str(stats["total"]))
+        self.lbl_buenas.configure(text=str(stats["buenas"]))
+        self.lbl_scrap.configure(text=str(stats["scrap"]))
+        self.lbl_oee.configure(text=f"{stats['oee_prom']:.2f}%")
+        self.card_oee.configure(fg_color=self._tone(stats["oee_prom"]))
+
         for w in self.chart_frame.winfo_children():
             w.destroy()
         if not data:
@@ -895,7 +923,7 @@ class ReportsView(ctk.CTkFrame):
             buenas = [d["buenas"] for d in data]
             scraps = [d["scrap"] for d in data]
 
-            fig = Figure(figsize=(7, 6), dpi=100)
+            fig = Figure(figsize=(6, 5), dpi=100)
             ax1 = fig.add_subplot(211)
             sns.lineplot(x=fechas, y=oees, ax=ax1, marker="o", color="#007aff")
             ax1.set_ylabel("OEE %")
@@ -913,7 +941,7 @@ class ReportsView(ctk.CTkFrame):
             fig.tight_layout()
             canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
             canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True)
+            canvas.get_tk_widget().pack(padx=20, pady=20)
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
