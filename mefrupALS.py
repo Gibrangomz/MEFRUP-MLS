@@ -864,34 +864,6 @@ class ReportsView(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
-# ---------- Menú ----------
-class MainMenu(ctk.CTkFrame):
-
-        # por máquina y promedio de área
-        oees = []
-        for m in MACHINES:
-            r = resumen_hoy_maquina(m, hoy)
-            oees.append(r["oee"])
-            card = self.cards[m["id"]]
-            card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
-            card["A"].configure(text=f"A {r['A']:.2f}%")
-            card["P"].configure(text=f"P {r['P']:.2f}%")
-            card["Q"].configure(text=f"Q {r['Q']:.2f}%")
-            card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
-            bg, fg = self._tone(r["oee"])
-            try:
-                card["wrap"].configure(fg_color=bg)
-            except:
-                pass
-        if oees:
-            area_oee = sum(oees) / len(oees)
-            self.lbl_area.configure(text=f"{area_oee:.2f} %")
-        else:
-            self.lbl_area.configure(text="0.00 %")
-
-        if self._timer: self.after_cancel(self._timer)
-        self._timer = self.after(DASH_REFRESH_MS, self._refresh_now)
-
 # ---------- Reportes ----------
 class ReportsView(ctk.CTkFrame):
     def __init__(self, master, app):
@@ -973,16 +945,6 @@ class MainMenu(ctk.CTkFrame):
         ctk.CTkButton(box, text="Recetas (Moldes/Partes)", height=44, corner_radius=14,
                       fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
                       command=app.go_recipes).pack(pady=(0,8), ipadx=20)
-
-        ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
-                      command=app.go_planning).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Tablero de Órdenes (Progreso)", height=44, corner_radius=14,
-                      command=app.go_orders_board).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Reportes de Producción", height=44, corner_radius=14,
-                      command=app.go_reports).pack(pady=(0,8), ipadx=20)
-        # NUEVO
-        ctk.CTkButton(box, text="Salida de Piezas (Embarques)", height=44, corner_radius=14,
-                      command=app.go_shipments).pack(pady=(0,8), ipadx=20)
 
         ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
                       command=app.go_planning).pack(pady=(0,8), ipadx=20)
