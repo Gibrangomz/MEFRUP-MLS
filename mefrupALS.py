@@ -1038,13 +1038,6 @@ class App(ctk.CTk):
         self.dashboard_page=LiveDashboard(self.container, self)
         self.reports_page=ReportsView(self.container, self)
 
-        self.container=ctk.CTkFrame(self, corner_radius=0, fg_color="transparent"); self.container.pack(fill="both", expand=True)
-        self.menu_page=MainMenu(self.container, self)
-        self.recipes_page=RecipesView(self.container, self)
-        self.choose_page=MachineChooser(self.container, self)
-        self.dashboard_page=LiveDashboard(self.container, self)
-        self.reports_page=ReportsView(self.container, self)
-
 
         self._refresh_moldes_from_recipes()
         self.go_menu()
@@ -1119,24 +1112,8 @@ class App(ctk.CTk):
         if not self.shipments_page:
             self.shipments_page = ShipmentsView(self.container, self)
         self._pack_only(self.shipments_page)
-
-    def go_orders_board(self):
-        if not self.orders_board_page:
-            self.orders_board_page = OrdersBoardView(self.container, self)
-        self._pack_only(self.orders_board_page)
-
-    def go_reports(self):
-        if not self.reports_page:
-            self.reports_page = ReportsView(self.container, self)
-        self._pack_only(self.reports_page)
-
-    def go_shipments(self, preselect_order: str|None=None):
-        self._shipments_preselect_order = preselect_order
-        if not self.shipments_page:
-            self.shipments_page = ShipmentsView(self.container, self)
-        self._pack_only(self.shipments_page)
-
-        if preselect_order: self.shipments_page.set_order(preselect_order)
+        if preselect_order:
+            self.shipments_page.set_order(preselect_order)
 
     # recetas / moldes
     def _refresh_moldes_from_recipes(self, force_update_menu=False):
