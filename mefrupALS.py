@@ -778,42 +778,62 @@ class ReportsView(ctk.CTkFrame):
     def _build(self):
         header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
         header.pack(fill="x", side="top")
-        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16,10), pady=10)
-        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold"))\
-            .pack(side="left", pady=10)
+        ctk.CTkButton(
+            header,
+            text="← Menú",
+            command=self.app.go_menu,
+            width=110,
+            corner_radius=10,
+            fg_color="#E5E7EB",
+            text_color="#111",
+            hover_color="#D1D5DB",
+        ).pack(side="left", padx=(16, 10), pady=10)
+        ctk.CTkLabel(
+            header,
+            text="Reportes de Producción",
+            font=ctk.CTkFont("Helvetica", 20, "bold"),
+        ).pack(side="left", pady=10)
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        body = ctk.CTkFrame(self, fg_color="#F3F4F6")
         body.pack(fill="both", expand=True, padx=40, pady=40)
-        body.grid_columnconfigure(1, weight=1)
-        body.grid_rowconfigure(5, weight=1)
+
+        controls = ctk.CTkFrame(body, corner_radius=16, fg_color="white")
+        controls.pack(fill="x", pady=(0, 20))
+        controls.grid_columnconfigure(1, weight=1)
 
         opciones = [m["id"] for m in MACHINES]
         self.machine_var = tk.StringVar(value=opciones[0])
-        ctk.CTkLabel(body, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6)
-        ctk.CTkOptionMenu(body, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(controls, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6, padx=10)
+        ctk.CTkOptionMenu(controls, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w", padx=10)
 
-        ctk.CTkLabel(body, text="Desde:").grid(row=1, column=0, sticky="w", pady=6)
-        r1=ctk.CTkFrame(body, fg_color="transparent")
-        r1.grid(row=1, column=1, sticky="w")
-        self.desde_entry=ctk.CTkEntry(r1, width=120)
+        ctk.CTkLabel(controls, text="Desde:").grid(row=1, column=0, sticky="w", pady=6, padx=10)
+        r1 = ctk.CTkFrame(controls, fg_color="transparent")
+        r1.grid(row=1, column=1, sticky="w", padx=10)
+        self.desde_entry = ctk.CTkEntry(r1, width=120)
         self.desde_entry.pack(side="left")
-        ctk.CTkButton(r1, text="📅", width=36, command=lambda:self._calendar_pick(self.desde_entry)).pack(side="left", padx=(6,0))
+        ctk.CTkButton(r1, text="📅", width=36, command=lambda: self._calendar_pick(self.desde_entry)).pack(side="left", padx=(6, 0))
 
-        ctk.CTkLabel(body, text="Hasta:").grid(row=2, column=0, sticky="w", pady=6)
-        r2=ctk.CTkFrame(body, fg_color="transparent")
-        r2.grid(row=2, column=1, sticky="w")
-        self.hasta_entry=ctk.CTkEntry(r2, width=120)
+        ctk.CTkLabel(controls, text="Hasta:").grid(row=2, column=0, sticky="w", pady=6, padx=10)
+        r2 = ctk.CTkFrame(controls, fg_color="transparent")
+        r2.grid(row=2, column=1, sticky="w", padx=10)
+        self.hasta_entry = ctk.CTkEntry(r2, width=120)
         self.hasta_entry.pack(side="left")
-        ctk.CTkButton(r2, text="📅", width=36, command=lambda:self._calendar_pick(self.hasta_entry)).pack(side="left", padx=(6,0))
+        ctk.CTkButton(r2, text="📅", width=36, command=lambda: self._calendar_pick(self.hasta_entry)).pack(side="left", padx=(6, 0))
 
-        ctk.CTkButton(body, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(20,10))
+        ctk.CTkButton(controls, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(12, 6))
 
-        self.stats_var=tk.StringVar(value="")
-        ctk.CTkLabel(body, textvariable=self.stats_var, justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0,10))
+        self.stats_var = tk.StringVar(value="")
+        ctk.CTkLabel(
+            controls,
+            textvariable=self.stats_var,
+            justify="left",
+            font=ctk.CTkFont(size=13),
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
 
-        self.chart_frame=ctk.CTkFrame(body, fg_color="white")
-        self.chart_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
+        self.chart_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self.chart_frame.pack(fill="both", expand=True)
+        self.chart_frame.grid_columnconfigure((0, 1), weight=1)
+        self.chart_frame.grid_rowconfigure((0, 1), weight=1)
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
@@ -839,9 +859,12 @@ class ReportsView(ctk.CTkFrame):
             return
         desde=self.desde_entry.get().strip()
         hasta=self.hasta_entry.get().strip()
-        stats,data=resumen_rango_maquina(machine, desde, hasta)
-        self.stats_var.set(f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%")
-        for w in self.chart_frame.winfo_children(): w.destroy()
+        stats, data = resumen_rango_maquina(machine, desde, hasta)
+        self.stats_var.set(
+            f"Total: {stats['total']}   Buenas: {stats['buenas']}   Scrap: {stats['scrap']}   OEE Prom: {stats['oee_prom']:.2f}%"
+        )
+        for w in self.chart_frame.winfo_children():
+            w.destroy()
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
@@ -849,79 +872,64 @@ class ReportsView(ctk.CTkFrame):
             import seaborn as sns
             from matplotlib.figure import Figure
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-            fechas=[d["fecha"] for d in data]
-            oees=[d["oee"] for d in data]
-            fig=Figure(figsize=(6,3), dpi=100)
-            ax=fig.add_subplot(111)
-            sns.lineplot(x=fechas, y=oees, ax=ax)
-            ax.set_ylabel("OEE %")
-            ax.set_xlabel("Fecha")
-            ax.tick_params(axis='x', rotation=45)
-            fig.tight_layout()
-            canvas=FigureCanvasTkAgg(fig, master=self.chart_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True)
-        except Exception as e:
-            messagebox.showerror("Error graficando", str(e))
 
-# ---------- Reportes ----------
-class ReportsView(ctk.CTkFrame):
-    def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent")
-        self.app = app
-        self._build()
-
-    def _build(self):
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
-        header.pack(fill="x", side="top")
-        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16,10), pady=10)
-        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold"))\
-            .pack(side="left", pady=10)
-
-        body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=40, pady=40)
-        body.grid_columnconfigure(1, weight=1)
-
-        opciones = [m["id"] for m in MACHINES]
-        self.machine_var = tk.StringVar(value=opciones[0])
-        ctk.CTkLabel(body, text="Máquina:").grid(row=0, column=0, sticky="w", pady=6)
-        ctk.CTkOptionMenu(body, values=opciones, variable=self.machine_var).grid(row=0, column=1, sticky="w")
-
-        ctk.CTkLabel(body, text="Desde (AAAA-MM-DD):").grid(row=1, column=0, sticky="w", pady=6)
-        self.desde_entry = ctk.CTkEntry(body)
-        self.desde_entry.grid(row=1, column=1, sticky="w")
-
-        ctk.CTkLabel(body, text="Hasta (AAAA-MM-DD):").grid(row=2, column=0, sticky="w", pady=6)
-        self.hasta_entry = ctk.CTkEntry(body)
-        self.hasta_entry.grid(row=2, column=1, sticky="w")
-
-        ctk.CTkButton(body, text="Generar", command=self._generar).grid(row=3, column=0, columnspan=2, pady=(20,0))
-
-    def _generar(self):
-        mid = self.machine_var.get()
-        machine = next((m for m in MACHINES if m["id"] == mid), None)
-        if not machine:
-            messagebox.showerror("Error", "Máquina inválida")
-            return
-        desde = self.desde_entry.get().strip()
-        hasta = self.hasta_entry.get().strip()
-        stats, data = resumen_rango_maquina(machine, desde, hasta)
-        messagebox.showinfo(
-            "Reporte",
-            f"Total: {stats['total']}\nBuenas: {stats['buenas']}\nScrap: {stats['scrap']}\nOEE Promedio: {stats['oee_prom']:.2f}%"
-        )
-        try:
-            import seaborn as sns
-            import matplotlib.pyplot as plt
+            sns.set_theme(style="whitegrid")
             fechas = [d["fecha"] for d in data]
             oees = [d["oee"] for d in data]
-            plt.figure(figsize=(8,4))
-            sns.lineplot(x=fechas, y=oees)
-            plt.xticks(rotation=45)
-            plt.ylabel("OEE %")
-            plt.tight_layout()
-            plt.show()
+            totals = [d["total"] for d in data]
+            scraps = [d["scrap"] for d in data]
+            buenas = [d["buenas"] for d in data]
+
+            # OEE line chart
+            f1 = ctk.CTkFrame(self.chart_frame, fg_color="white", corner_radius=12)
+            f1.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
+            fig1 = Figure(figsize=(6, 3), dpi=100)
+            ax1 = fig1.add_subplot(111)
+            sns.lineplot(x=fechas, y=oees, marker="o", ax=ax1)
+            ax1.set_ylabel("OEE %")
+            ax1.set_xlabel("Fecha")
+            ax1.set_title("OEE por Día")
+            ax1.tick_params(axis="x", rotation=45)
+            fig1.tight_layout()
+            canvas1 = FigureCanvasTkAgg(fig1, master=f1)
+            canvas1.draw()
+            canvas1.get_tk_widget().pack(fill="both", expand=True)
+
+            # Total vs Scrap bar chart
+            f2 = ctk.CTkFrame(self.chart_frame, fg_color="white", corner_radius=12)
+            f2.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+            fig2 = Figure(figsize=(5, 3), dpi=100)
+            ax2 = fig2.add_subplot(111)
+            x = range(len(fechas))
+            width = 0.4
+            ax2.bar([i - width / 2 for i in x], totals, width, label="Total", color="#60a5fa")
+            ax2.bar([i + width / 2 for i in x], scraps, width, label="Scrap", color="#f87171")
+            ax2.set_xticks(list(x))
+            ax2.set_xticklabels(fechas, rotation=45)
+            ax2.set_ylabel("Piezas")
+            ax2.set_title("Total vs Scrap")
+            ax2.legend()
+            fig2.tight_layout()
+            canvas2 = FigureCanvasTkAgg(fig2, master=f2)
+            canvas2.draw()
+            canvas2.get_tk_widget().pack(fill="both", expand=True)
+
+            # Buenas vs Scrap pie chart
+            f3 = ctk.CTkFrame(self.chart_frame, fg_color="white", corner_radius=12)
+            f3.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
+            fig3 = Figure(figsize=(4, 3), dpi=100)
+            ax3 = fig3.add_subplot(111)
+            ax3.pie(
+                [sum(buenas), sum(scraps)],
+                labels=["Buenas", "Scrap"],
+                autopct="%1.1f%%",
+                colors=["#34d399", "#f87171"],
+            )
+            ax3.set_title("Distribución de Piezas")
+            fig3.tight_layout()
+            canvas3 = FigureCanvasTkAgg(fig3, master=f3)
+            canvas3.draw()
+            canvas3.get_tk_widget().pack(fill="both", expand=True)
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
@@ -929,33 +937,43 @@ class ReportsView(ctk.CTkFrame):
 class MainMenu(ctk.CTkFrame):
 
     def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent")
-        box=ctk.CTkFrame(self, corner_radius=20); box.pack(expand=True, fill="both", padx=40, pady=40)
+        super().__init__(master, fg_color="#F3F4F6")
+        box = ctk.CTkFrame(self, corner_radius=20, fg_color="white")
+        box.pack(expand=True, fill="both", padx=60, pady=60)
+
         try:
-            img=Image.open(LOGO_PATH); logo=ctk.CTkImage(light_image=img, dark_image=img, size=(240,96))
-            ctk.CTkLabel(box, image=logo, text="").pack(pady=(30,10)); self.logo=logo
+            img = Image.open(LOGO_PATH)
+            logo = ctk.CTkImage(light_image=img, dark_image=img, size=(240, 96))
+            ctk.CTkLabel(box, image=logo, text="").pack(pady=(30, 10))
+            self.logo = logo
         except:
-            ctk.CTkLabel(box, text="MEFRUP", font=ctk.CTkFont("Helvetica",36,"bold")).pack(pady=(50,10))
-        ctk.CTkLabel(box, text="Mefrup MLS", font=ctk.CTkFont("Helvetica",28,"bold")).pack(pady=(0,6))
-        ctk.CTkLabel(box, text="Sistema de Monitoreo y Producción", font=ctk.CTkFont("Helvetica",14)).pack(pady=(0,20))
-        ctk.CTkButton(box, text="Tablero en vivo (Área Inyección)", height=48, corner_radius=14,
-                      command=app.go_dashboard).pack(pady=(0,12), ipadx=20)
-        ctk.CTkButton(box, text="OEE y Registro de Producción", height=48, corner_radius=14,
-                      command=app.go_oee_select_machine).pack(pady=(0,12), ipadx=20)
-        ctk.CTkButton(box, text="Recetas (Moldes/Partes)", height=44, corner_radius=14,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
-                      command=app.go_recipes).pack(pady=(0,8), ipadx=20)
+            ctk.CTkLabel(box, text="MEFRUP", font=ctk.CTkFont("Helvetica", 36, "bold"))\
+                .pack(pady=(50, 10))
 
-        ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
-                      command=app.go_planning).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Tablero de Órdenes (Progreso)", height=44, corner_radius=14,
-                      command=app.go_orders_board).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Reportes de Producción", height=44, corner_radius=14,
-                      command=app.go_reports).pack(pady=(0,8), ipadx=20)
-        # NUEVO
-        ctk.CTkButton(box, text="Salida de Piezas (Embarques)", height=44, corner_radius=14,
-                      command=app.go_shipments).pack(pady=(0,8), ipadx=20)
+        ctk.CTkLabel(box, text="Mefrup MLS", font=ctk.CTkFont("Helvetica", 28, "bold"))\
+            .pack(pady=(0, 6))
+        ctk.CTkLabel(box, text="Sistema de Monitoreo y Producción",
+                      font=ctk.CTkFont("Helvetica", 14)).pack(pady=(0, 20))
 
+        btn_frame = ctk.CTkFrame(box, fg_color="transparent")
+        btn_frame.pack(expand=True, fill="both", pady=10)
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        btns = [
+            {"text": "Tablero en vivo (Área Inyección)", "command": app.go_dashboard, "height": 48},
+            {"text": "OEE y Registro de Producción", "command": app.go_oee_select_machine, "height": 48},
+            {"text": "Recetas (Moldes/Partes)", "command": app.go_recipes, "height": 44,
+             "fg_color": "#E5E7EB", "text_color": "#111", "hover_color": "#D1D5DB"},
+            {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
+            {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
+            {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
+            {"text": "Salida de Piezas (Embarques)", "command": app.go_shipments, "height": 44},
+        ]
+
+        for i, kwargs in enumerate(btns):
+            r, c = divmod(i, 2)
+            ctk.CTkButton(btn_frame, corner_radius=14, **kwargs)\
+                .grid(row=r, column=c, padx=12, pady=12, sticky="ew")
 
 # ---------- App ----------
 class App(ctk.CTk):
@@ -1003,15 +1021,6 @@ class App(ctk.CTk):
         self.choose_page = None
         self.oee_pages = {}  # id->OEEView
         self.machine_context = {}
-
-        self.dashboard_page = None
-
-        # planificación
-        self.planning_page = None
-        self.orders_board_page = None
-        self.reports_page = None
-        self.shipments_page = None
-        self._shipments_preselect_order = None
 
         self.dashboard_page = None
 
