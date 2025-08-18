@@ -741,8 +741,10 @@ class LiveDashboard(ctk.CTkFrame):
             self.cards[m["id"]]["A"].pack(side="left", padx=(12,0))
             self.cards[m["id"]]["P"].pack(side="left", padx=(12,0))
             self.cards[m["id"]]["Q"].pack(side="left", padx=(12,0))
+            self.cards[m["id"]]["orden"] = ctk.CTkLabel(card, text="Orden: —", wraplength=520, justify="left")
+            self.cards[m["id"]]["orden"].pack(anchor="w", padx=12, pady=(8,0))
             self.cards[m["id"]]["paro"]= ctk.CTkLabel(card, text="Último paro: -", wraplength=520, justify="left")
-            self.cards[m["id"]]["paro"].pack(anchor="w", padx=12, pady=(8,10))
+            self.cards[m["id"]]["paro"].pack(anchor="w", padx=12, pady=(4,10))
 
         self._refresh_now()
 
@@ -754,6 +756,7 @@ class LiveDashboard(ctk.CTkFrame):
 
         # por máquina y promedio de área
         total_area = scrap_area = meta_area = 0
+        plan_rows = leer_csv_dict(PLANNING_CSV)
         for m in MACHINES:
             r = resumen_hoy_maquina(m, hoy)
             total_area += r["total"]
@@ -764,6 +767,17 @@ class LiveDashboard(ctk.CTkFrame):
             card["A"].configure(text=f"A {r['A']:.2f}%")
             card["P"].configure(text=f"P {r['P']:.2f}%")
             card["Q"].configure(text=f"Q {r['Q']:.2f}%")
+            # orden planificada para la máquina
+            futuros=[p for p in plan_rows if p.get("maquina_id")==m["id"] and (p.get("estado","plan").lower()!="done")]
+            try:
+                futuros.sort(key=lambda p: p.get("inicio_ts",""))
+            except Exception:
+                pass
+            if futuros:
+                p=futuros[0]
+                card["orden"].configure(text=f"Orden {p.get('orden','')} — {p.get('parte','')} ({p.get('inicio_ts','')} → {p.get('fin_est_ts','')})")
+            else:
+                card["orden"].configure(text="Orden: —")
             card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
             bg, fg = self._tone(r["oee"])
             try:
@@ -1632,6 +1646,11 @@ class PlanningMilestonesView(ctk.CTkFrame):
             w.writeheader(); w.writerows(rows)
         messagebox.showinfo("Orden","Orden guardada.")
         self._reload_orders_combo(); self._reload_orders_table()
+        if getattr(self.app, 'dashboard_page', None):
+            try:
+                self.app.dashboard_page._refresh_now()
+            except Exception:
+                logging.exception("Error al actualizar tablero en vivo")
 
     def _delete_orden(self):
         orden = self.e_orden.get().strip() or self.sel_orden_var.get().strip()
@@ -1648,6 +1667,11 @@ class PlanningMilestonesView(ctk.CTkFrame):
             w.writeheader(); w.writerows(miles)
         messagebox.showinfo("Orden","Orden eliminada.")
         self._reload_orders_combo(); self._reload_orders_table(); self._render_milestones_panel()
+        if getattr(self.app, 'dashboard_page', None):
+            try:
+                self.app.dashboard_page._refresh_now()
+            except Exception:
+                logging.exception("Error al actualizar tablero en vivo")
 
     def _mark_done(self):
         orden = self.e_orden.get().strip() or self.sel_orden_var.get().strip()
@@ -1660,6 +1684,11 @@ class PlanningMilestonesView(ctk.CTkFrame):
             w=csv.DictWriter(f, fieldnames=["orden","parte","molde_id","maquina_id","qty_total","inicio_ts","fin_est_ts","setup_min","estado","ciclo_s","cav_on"])
             w.writeheader(); w.writerows(rows)
         self._reload_orders_table()
+        if getattr(self.app, 'dashboard_page', None):
+            try:
+                self.app.dashboard_page._refresh_now()
+            except Exception:
+                logging.exception("Error al actualizar tablero en vivo")
         messagebox.showinfo("Orden","Orden marcada como completada.")
 
     def _reload_orders_combo(self):
