@@ -174,7 +174,8 @@ def acum_global(rows):
             "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
 
 def promedio_oee_daily(path_daily):
-    vals=[float(r.get("oee_dia_%","0") or 0) for r in leer_csv_dict(path_daily)] if os.path.exists(path_daily) else []
+    rows = leer_csv_dict(path_daily) if os.path.exists(path_daily) else []
+    vals = [_safe_float(r.get("oee_dia_%", 0)) for r in rows]
     return round(sum(vals)/len(vals),2) if vals else 0.0
 
 def dia_semana_es(f):
