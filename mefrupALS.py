@@ -182,85 +182,6 @@ def promedio_oee_daily(path_daily):
     vals = [_safe_float(r.get("oee_dia_%", 0)) for r in rows]
     return round(sum(vals)/len(vals),2) if vals else 0.0
 
-def acum_por_fecha(rows, fecha_iso):
-    total = scrap = 0
-    meta = 0.0
-    n = 0
-    for r in rows:
-        if r.get("fecha") != fecha_iso:
-            continue
-        total += parse_int_str(r.get("total_pzs", "0"))
-        scrap += parse_int_str(r.get("scrap_pzs", "0"))
-        meta += _safe_float(r.get("meta_oper_pzs", "0"))
-        n += 1
-    if total<=0 or meta<=0:
-        return {"count":n,"total":total,"scrap":scrap,"buenas":max(0,total-scrap),
-                "perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
-    return {"count":n,"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),
-            "oee_pct":round(OEE,2),"meta_pzs":meta}
-
-def acum_global(rows):
-    total = scrap = 0
-    meta = 0.0
-    n = 0
-    dias = set()
-    for r in rows:
-        total += parse_int_str(r.get("total_pzs", "0"))
-        scrap += parse_int_str(r.get("scrap_pzs", "0"))
-        meta += _safe_float(r.get("meta_oper_pzs", "0"))
-        n += 1
-        if r.get("fecha"):
-            dias.add(r["fecha"])
-    if total<=0 or meta<=0:
-        return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,
-                "buenas":max(0,total-scrap),"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
-    return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
-
-def acum_por_fecha(rows, fecha_iso):
-    total=scrap=0; meta=0.0; n=0
-    for r in rows:
-        if r.get("fecha")!=fecha_iso: continue
-        try:
-            total+=int(float(r.get("total_pzs","0")))
-            scrap+=int(float(r.get("scrap_pzs","0")))
-            meta +=float(r.get("meta_oper_pzs","0"))
-            n+=1
-        except: pass
-    if total<=0 or meta<=0:
-        return {"count":n,"total":total,"scrap":scrap,"buenas":max(0,total-scrap),
-                "perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
-    return {"count":n,"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),
-            "oee_pct":round(OEE,2),"meta_pzs":meta}
-
-def acum_global(rows):
-    total=scrap=0; meta=0.0; n=0; dias=set()
-    for r in rows:
-        try:
-            total+=int(float(r.get("total_pzs","0")))
-            scrap+=int(float(r.get("scrap_pzs","0")))
-            meta +=float(r.get("meta_oper_pzs","0"))
-            n+=1
-            if r.get("fecha"): dias.add(r["fecha"])
-        except: pass
-    if total<=0 or meta<=0:
-        return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,
-                "buenas":max(0,total-scrap),"perf_pct":0.0,"qual_pct":0.0,"oee_pct":0.0,"meta_pzs":meta}
-    buenas=max(0,total-scrap); P=total/meta; Q=buenas/total; OEE=P*Q*100.0
-    return {"registros":n,"dias":len(dias),"total":total,"scrap":scrap,"buenas":buenas,
-            "perf_pct":round(P*100,2),"qual_pct":round(Q*100,2),"oee_pct":round(OEE,2),"meta_pzs":meta}
-
-
-def promedio_oee_daily(path_daily):
-    rows = leer_csv_dict(path_daily) if os.path.exists(path_daily) else []
-    vals = [_safe_float(r.get("oee_dia_%", 0)) for r in rows]
-    return round(sum(vals)/len(vals),2) if vals else 0.0
-
 
 def dia_semana_es(f):
     try: y,m,d=map(int,f.split("-")); return DIAS_ES[date(y,m,d).weekday()]
@@ -352,54 +273,6 @@ def resumen_hoy_maquina(machine, fecha_iso):
     return dict(oee=round(oee,2),A=round(A,2),P=round(P,2),Q=round(Q,2),
                 total=total,buenas=buenas,scrap=scrap, meta=meta_oper,
                 ciclo_ideal=ciclo_ideal, ciclo_real=round(ciclo_real,2),
-                turno_seg=turno_seg, oper_seg=oper_seg, ultimo_paro=ultimo)
-
-def resumen_rango_maquina(machine, desde, hasta):
-    """Agrega métricas de producción en un rango de fechas."""
-    asegurar_archivos_maquina(machine)
-    rows = leer_csv_dict(machine["oee_csv"])
-    data = []
-    for r in rows:
-        f = r.get("fecha")
-        if not f:
-            continue
-        if desde and f < desde:
-            continue
-        if hasta and f > hasta:
-            continue
-        total = parse_int_str(r.get("total_pzs", "0"))
-        scrap = parse_int_str(r.get("scrap_pzs", "0"))
-        meta = _safe_float(r.get("meta_oper_pzs", "0"))
-        if total <= 0 or meta <= 0:
-            continue
-        buenas = max(0, total - scrap)
-        P = total / meta if meta > 0 else 0.0
-        Q = buenas / total if total > 0 else 0.0
-        oee = P * Q * 100.0
-        data.append({
-            "fecha": f,
-            "total": total,
-            "scrap": scrap,
-            "buenas": buenas,
-            "oee": round(oee, 2)
-        })
-    if not data:
-        return {"total":0, "scrap":0, "buenas":0, "oee_prom":0.0}, []
-    total = sum(d["total"] for d in data)
-    scrap = sum(d["scrap"] for d in data)
-    buenas = sum(d["buenas"] for d in data)
-    oee_prom = sum(d["oee"] for d in data) / len(data)
-    stats = {
-        "total": total,
-        "scrap": scrap,
-        "buenas": buenas,
-        "oee_prom": round(oee_prom, 2)
-    }
-    return stats, data
-
-# ---------- Vistas ----------
-class RecipesView(ctk.CTkFrame):
-
                 turno_seg=turno_seg, oper_seg=oper_seg, ultimo_paro=ultimo)
 
 def resumen_rango_maquina(machine, desde, hasta):
@@ -991,34 +864,6 @@ class ReportsView(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("Error graficando", str(e))
 
-# ---------- Menú ----------
-class MainMenu(ctk.CTkFrame):
-
-        # por máquina y promedio de área
-        oees = []
-        for m in MACHINES:
-            r = resumen_hoy_maquina(m, hoy)
-            oees.append(r["oee"])
-            card = self.cards[m["id"]]
-            card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
-            card["A"].configure(text=f"A {r['A']:.2f}%")
-            card["P"].configure(text=f"P {r['P']:.2f}%")
-            card["Q"].configure(text=f"Q {r['Q']:.2f}%")
-            card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
-            bg, fg = self._tone(r["oee"])
-            try:
-                card["wrap"].configure(fg_color=bg)
-            except:
-                pass
-        if oees:
-            area_oee = sum(oees) / len(oees)
-            self.lbl_area.configure(text=f"{area_oee:.2f} %")
-        else:
-            self.lbl_area.configure(text="0.00 %")
-
-        if self._timer: self.after_cancel(self._timer)
-        self._timer = self.after(DASH_REFRESH_MS, self._refresh_now)
-
 # ---------- Reportes ----------
 class ReportsView(ctk.CTkFrame):
     def __init__(self, master, app):
@@ -1100,16 +945,6 @@ class MainMenu(ctk.CTkFrame):
         ctk.CTkButton(box, text="Recetas (Moldes/Partes)", height=44, corner_radius=14,
                       fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
                       command=app.go_recipes).pack(pady=(0,8), ipadx=20)
-
-        ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
-                      command=app.go_planning).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Tablero de Órdenes (Progreso)", height=44, corner_radius=14,
-                      command=app.go_orders_board).pack(pady=(0,8), ipadx=20)
-        ctk.CTkButton(box, text="Reportes de Producción", height=44, corner_radius=14,
-                      command=app.go_reports).pack(pady=(0,8), ipadx=20)
-        # NUEVO
-        ctk.CTkButton(box, text="Salida de Piezas (Embarques)", height=44, corner_radius=14,
-                      command=app.go_shipments).pack(pady=(0,8), ipadx=20)
 
         ctk.CTkButton(box, text="Planificación + Milestones", height=44, corner_radius=14,
                       command=app.go_planning).pack(pady=(0,8), ipadx=20)
