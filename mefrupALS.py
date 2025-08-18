@@ -741,9 +741,39 @@ class LiveDashboard(ctk.CTkFrame):
             self.cards[m["id"]]["A"].pack(side="left", padx=(12,0))
             self.cards[m["id"]]["P"].pack(side="left", padx=(12,0))
             self.cards[m["id"]]["Q"].pack(side="left", padx=(12,0))
-            self.cards[m["id"]]["orden"] = ctk.CTkLabel(card, text="Orden: —", wraplength=520, justify="left")
-            self.cards[m["id"]]["orden"].pack(anchor="w", padx=12, pady=(8,0))
-            self.cards[m["id"]]["paro"]= ctk.CTkLabel(card, text="Último paro: -", wraplength=520, justify="left")
+
+            order_card = ctk.CTkFrame(card, corner_radius=12, fg_color=("white", "#1c1c1e"))
+            order_card.pack(fill="x", padx=12, pady=(8,0))
+            self.cards[m["id"]]["order_card"] = order_card
+
+            self.cards[m["id"]]["order_title"] = ctk.CTkLabel(
+                order_card,
+                text="Sin orden asignada",
+                font=ctk.CTkFont("Helvetica", 13, "bold"),
+            )
+            self.cards[m["id"]]["order_title"].pack(anchor="w", padx=8, pady=(8,4))
+
+            ctk.CTkLabel(order_card, text="Progreso de producción").pack(anchor="w", padx=8)
+            self.cards[m["id"]]["pb_prod"] = ctk.CTkProgressBar(order_card)
+            self.cards[m["id"]]["pb_prod"].set(0)
+            self.cards[m["id"]]["pb_prod"].pack(fill="x", padx=8)
+            r1 = ctk.CTkFrame(order_card, fg_color="transparent")
+            r1.pack(fill="x", padx=8, pady=(2,6))
+            self.cards[m["id"]]["lbl_prod"] = ctk.CTkLabel(r1, text="Producidas: 0/0 pzs")
+            self.cards[m["id"]]["lbl_prod"].pack(side="left")
+            self.cards[m["id"]]["lbl_days"] = ctk.CTkLabel(r1, text="")
+            self.cards[m["id"]]["lbl_days"].pack(side="right")
+
+            ctk.CTkLabel(order_card, text="Progreso de salidas / embarques").pack(anchor="w", padx=8)
+            self.cards[m["id"]]["pb_ship"] = ctk.CTkProgressBar(order_card)
+            self.cards[m["id"]]["pb_ship"].set(0)
+            self.cards[m["id"]]["pb_ship"].pack(fill="x", padx=8)
+            r2 = ctk.CTkFrame(order_card, fg_color="transparent")
+            r2.pack(fill="x", padx=8, pady=(2,8))
+            self.cards[m["id"]]["lbl_ship"] = ctk.CTkLabel(r2, text="Enviado: 0/0 pzs  •  Disponible: 0")
+            self.cards[m["id"]]["lbl_ship"].pack(anchor="w")
+
+            self.cards[m["id"]]["paro"] = ctk.CTkLabel(card, text="Último paro: -", wraplength=520, justify="left")
             self.cards[m["id"]]["paro"].pack(anchor="w", padx=12, pady=(4,10))
 
         self._refresh_now()
@@ -767,23 +797,63 @@ class LiveDashboard(ctk.CTkFrame):
             card["A"].configure(text=f"A {r['A']:.2f}%")
             card["P"].configure(text=f"P {r['P']:.2f}%")
             card["Q"].configure(text=f"Q {r['Q']:.2f}%")
-            # orden planificada para la máquina
-            futuros=[p for p in plan_rows if p.get("maquina_id")==m["id"] and (p.get("estado","plan").lower()!="done")]
-            try:
-                futuros.sort(key=lambda p: p.get("inicio_ts",""))
-            except Exception:
-                pass
-            if futuros:
-                p=futuros[0]
-                card["orden"].configure(text=f"Orden {p.get('orden','')} — {p.get('parte','')} ({p.get('inicio_ts','')} → {p.get('fin_est_ts','')})")
-            else:
-                card["orden"].configure(text="Orden: —")
-            card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
             bg, fg = self._tone(r["oee"])
             try:
                 card["wrap"].configure(fg_color=bg)
             except:
                 pass
+            # orden planificada para la máquina
+            futuros = [
+                p
+                for p in plan_rows
+                if p.get("maquina_id") == m["id"]
+                and (p.get("estado", "plan").lower() != "done")
+            ]
+            try:
+                futuros.sort(key=lambda p: p.get("inicio_ts", ""))
+            except Exception:
+                pass
+            if futuros:
+                p = futuros[0]
+                orden = p.get("orden", "")
+                parte = p.get("parte", "")
+                molde = p.get("molde_id", "")
+                qty_total = parse_int_str(p.get("qty_total", "0"))
+                prod = producido_por_molde_global(molde)
+                shipped = enviados_por_orden(orden)
+                disp = max(0, prod - shipped)
+                frac_prod = (prod / qty_total) if qty_total > 0 else 0.0
+                frac_ship = (shipped / qty_total) if qty_total > 0 else 0.0
+                try:
+                    dleft = (
+                        datetime.strptime(p.get("fin_est_ts", ""), "%Y-%m-%d").date()
+                        - date.today()
+                    ).days
+                    days_left = f"{dleft} días restantes"
+                except Exception:
+                    days_left = ""
+                card["order_title"].configure(
+                    text=f"Orden {orden} — {parte} • Molde {molde}"
+                )
+                self.app._set_pb_if_changed(card["pb_prod"], frac_prod)
+                self.app._set_pb_if_changed(card["pb_ship"], frac_ship)
+                card["lbl_prod"].configure(
+                    text=f"Producidas: {prod}/{qty_total} pzs"
+                )
+                card["lbl_ship"].configure(
+                    text=f"Enviado: {shipped}/{qty_total} pzs  •  Disponible: {disp}"
+                )
+                card["lbl_days"].configure(text=days_left)
+            else:
+                card["order_title"].configure(text="Sin orden asignada")
+                self.app._set_pb_if_changed(card["pb_prod"], 0)
+                self.app._set_pb_if_changed(card["pb_ship"], 0)
+                card["lbl_prod"].configure(text="Producidas: 0/0 pzs")
+                card["lbl_ship"].configure(
+                    text="Enviado: 0/0 pzs  •  Disponible: 0"
+                )
+                card["lbl_days"].configure(text="")
+            card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
         if total_area > 0 and meta_area > 0:
             buenas_area = max(0, total_area - scrap_area)
             P_area = total_area / meta_area
