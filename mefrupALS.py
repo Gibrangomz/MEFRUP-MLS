@@ -943,8 +943,6 @@ class ReportsView(ctk.CTkFrame):
             text="Generar",
             command=self._generar,
             corner_radius=10,
-            fg_color="#007aff",
-            hover_color="#0051a8",
         ).grid(row=3, column=0, columnspan=2, pady=(14, 10))
 
         # tarjetas de estadísticos
@@ -1109,7 +1107,8 @@ class MainMenu(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme(os.path.join(BASE_DIR, "ios_blue.json"))
         self.title("Mefrup — ALS")
         try:
             self.state("zoomed")
