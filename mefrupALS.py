@@ -2370,7 +2370,9 @@ class InventoryView(ctk.CTkFrame):
             molde = orden_a_molde.get(r.get("orden", ""), "")
             card = ctk.CTkFrame(self.pending_frame, corner_radius=12)
             card.pack(fill="x", pady=4)
+
             txt = f"Orden {r.get('orden', '')} • Molde {molde} • Salida {r.get('qty')} pzs"
+
             ctk.CTkLabel(card, text=txt).pack(side="left", padx=8, pady=8)
             ctk.CTkButton(card, text="Aprobar", width=80,
                           command=lambda row=r: self._approve_shipment(row)).pack(side="right", padx=8, pady=8)
