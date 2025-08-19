@@ -24,6 +24,8 @@ class OrdersBoardView(ctk.CTkFrame):
         body=ctk.CTkScrollableFrame(self, corner_radius=0)
         body.pack(fill="both", expand=True, padx=16, pady=16)
         self.cards_container = body
+        self.lbl_totals = ctk.CTkLabel(self, text="—", text_color=("#6b7280","#9CA3AF"))
+        self.lbl_totals.pack(anchor="w", padx=16, pady=(0,10))
         self._refresh_cards()
 
     def _refresh_cards(self):
@@ -32,18 +34,21 @@ class OrdersBoardView(ctk.CTkFrame):
         try: rows.sort(key=lambda r: r.get("fin_est_ts",""))
         except: pass
 
+        datos, totales = inventario_fifo()
+        info_by_order = {d["orden"]: d for d in datos}
+
         for r in rows:
             orden=r.get("orden",""); parte=r.get("parte",""); molde=r.get("molde_id","")
             maquina=r.get("maquina_id",""); qty_total=parse_int_str(r.get("qty_total","0"))
             ini=r.get("inicio_ts",""); fin=r.get("fin_est_ts",""); setup=r.get("setup_min","0")
             estado=r.get("estado","plan")
-            prod = producido_por_molde_global(molde)
-            shipped_order = enviados_por_orden(orden)
-            shipped_total = enviados_por_molde(molde)
-            disp = max(0, prod - shipped_total)
-            frac_prod = (prod/qty_total) if qty_total>0 else 0.0
-            frac_ship = (shipped_order/qty_total) if qty_total>0 else 0.0
-            bg,fg = self._tone(frac_prod)
+            info = info_by_order.get(orden, dict(objetivo=qty_total,enviado=0,asignado=0,progreso=0,pendiente=qty_total))
+            progreso = info.get("progreso",0)
+            enviado = info.get("enviado",0)
+            asignado = info.get("asignado",0)
+            pendiente = info.get("pendiente",qty_total)
+            frac = (progreso/qty_total) if qty_total>0 else 0.0
+            bg,fg = self._tone(frac)
 
             try:
                 dleft = (datetime.strptime(fin,"%Y-%m-%d").date() - date.today()).days
@@ -59,27 +64,29 @@ class OrdersBoardView(ctk.CTkFrame):
             ctk.CTkLabel(head, text=f"Inicio {ini} • Fin {fin} • Setup {setup} min • Estado {estado}", font=ctk.CTkFont("Helvetica", 12),
                          text_color=("#6b7280","#9CA3AF")).pack(side="right")
 
-            # progreso producción
-            ctk.CTkLabel(card, text="Progreso de producción").pack(anchor="w", padx=12)
-            barp=ctk.CTkProgressBar(card); barp.set(frac_prod); barp.pack(fill="x", padx=12)
+            # progreso total (enviado + asignado)
+            ctk.CTkLabel(card, text="Progreso de orden").pack(anchor="w", padx=12)
+            barp=ctk.CTkProgressBar(card); barp.set(frac); barp.pack(fill="x", padx=12)
             row1=ctk.CTkFrame(card, fg_color="transparent"); row1.pack(fill="x", padx=12, pady=(4,8))
-            ctk.CTkLabel(row1, text=f"Producidas: {prod}/{qty_total} pzs").pack(side="left")
+            ctk.CTkLabel(row1, text=f"Progreso: {progreso}/{qty_total} pzs").pack(side="left")
             ctk.CTkLabel(row1, text=days_left).pack(side="right")
 
-            # progreso salidas
-            ctk.CTkLabel(card, text="Progreso de salidas / embarques").pack(anchor="w", padx=12)
-            bars=ctk.CTkProgressBar(card); bars.set(frac_ship); bars.pack(fill="x", padx=12)
-            row2=ctk.CTkFrame(card, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(4,10))
+            row2=ctk.CTkFrame(card, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(0,10))
             ctk.CTkLabel(
                 row2,
                 text=(
-                    f"Enviado ord: {shipped_order}/{qty_total} pzs  •  "
-                    f"Enviado mol: {shipped_total} pzs  •  Disponible: {disp}"
+                    f"Enviado {enviado}  •  Asignado {asignado}  •  Pendiente {pendiente}"
                 ),
             ).pack(side="left")
             ctk.CTkButton(row2, text="Registrar salida", command=lambda o=orden: self.app.go_shipments(o)).pack(side="right", padx=(6,0))
-            ctk.CTkButton(row2, text="Ver planificación", fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
-                          command=self.app.go_planning).pack(side="right")
+            ctk.CTkButton(row2, text="Ver planificación", fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB", command=self.app.go_planning).pack(side="right")
+
+        self.lbl_totals.configure(
+            text=(
+                f"Órdenes: {len(datos)} • Producción: {totales['produccion']}"
+                f" • Enviadas(✔): {totales['enviados']} • Stock neto: {totales['stock']}"
+            )
+        )
 
         if self._timer: self.after_cancel(self._timer)
         self._timer = self.after(6000, self._refresh_cards)
