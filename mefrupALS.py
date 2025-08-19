@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install customtkinter pillow tkcalendar matplotlib seaborn
+#   pip install customtkinter pillow tkcalendar matplotlib plotly kaleido
 
 import customtkinter as ctk
 import tkinter as tk
@@ -13,7 +13,7 @@ from datetime import datetime, date, timedelta
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.graph_objects as go
 
 # ---------- rutas / const ----------
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -305,30 +305,48 @@ def resumen_rango_maquina(machine, desde, hasta):
         total = parse_int_str(r.get("total_pzs", "0"))
         scrap = parse_int_str(r.get("scrap_pzs", "0"))
         meta = _safe_float(r.get("meta_oper_pzs", "0"))
+        avail = _safe_float(r.get("availability_%", "0"))
+        perf = _safe_float(r.get("performance_%", "0"))
+        qual = _safe_float(r.get("quality_%", "0"))
+        oee = _safe_float(r.get("oee_%", "0"))
         if total <= 0 or meta <= 0:
             continue
         buenas = max(0, total - scrap)
-        P = total / meta if meta > 0 else 0.0
-        Q = buenas / total if total > 0 else 0.0
-        oee = P * Q * 100.0
         data.append({
             "fecha": f,
             "total": total,
             "scrap": scrap,
             "buenas": buenas,
+            "availability": round(avail, 2),
+            "performance": round(perf, 2),
+            "quality": round(qual, 2),
             "oee": round(oee, 2)
         })
     if not data:
-        return {"total":0, "scrap":0, "buenas":0, "oee_prom":0.0}, []
+        return {
+            "total": 0,
+            "scrap": 0,
+            "buenas": 0,
+            "oee_prom": 0.0,
+            "avail_prom": 0.0,
+            "perf_prom": 0.0,
+            "qual_prom": 0.0
+        }, []
     total = sum(d["total"] for d in data)
     scrap = sum(d["scrap"] for d in data)
     buenas = sum(d["buenas"] for d in data)
     oee_prom = sum(d["oee"] for d in data) / len(data)
+    avail_prom = sum(d["availability"] for d in data) / len(data)
+    perf_prom = sum(d["performance"] for d in data) / len(data)
+    qual_prom = sum(d["quality"] for d in data) / len(data)
     stats = {
         "total": total,
         "scrap": scrap,
         "buenas": buenas,
-        "oee_prom": round(oee_prom, 2)
+        "oee_prom": round(oee_prom, 2),
+        "avail_prom": round(avail_prom, 2),
+        "perf_prom": round(perf_prom, 2),
+        "qual_prom": round(qual_prom, 2)
     }
     return stats, data
 
@@ -981,8 +999,11 @@ class ReportsView(ctk.CTkFrame):
 
     def _add_plot_card(self, title: str, fig, row: int, col: int):
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
-        plt.close(fig)
+        if hasattr(fig, "to_image"):
+            buf.write(fig.to_image(format="png", width=720, height=400, scale=2))
+        else:
+            fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+            plt.close(fig)
         buf.seek(0)
         image = Image.open(buf)
         ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(360, 200))
@@ -1035,34 +1056,45 @@ class ReportsView(ctk.CTkFrame):
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
 
-        sns.set_style("whitegrid")
-
         fechas = [d["fecha"] for d in data]
+        avail = [d["availability"] for d in data]
+        perf = [d["performance"] for d in data]
+        qual = [d["quality"] for d in data]
         oees = [d["oee"] for d in data]
-        buenas = [d["buenas"] for d in data]
-        scraps = [d["scrap"] for d in data]
 
-        fig_prod, ax = plt.subplots(figsize=(4, 2.2))
-        ax.bar(fechas, buenas, label="Buenas", color="#22c55e")
-        ax.bar(fechas, scraps, bottom=buenas, label="Scrap", color="#ef4444")
-        ax.set_ylabel("Piezas")
-        ax.set_xticks(range(len(fechas)))
-        ax.set_xticklabels(fechas, rotation=45, ha="right")
-        ax.legend()
-        ax.grid(axis="y", linestyle="--", alpha=0.5)
-        fig_prod.tight_layout()
+        fig_ind = go.Figure()
+        fig_ind.add_trace(go.Bar(name="Availability", x=fechas, y=avail, marker_color="#10b981"))
+        fig_ind.add_trace(go.Bar(name="Effectivity", x=fechas, y=perf, marker_color="#f59e0b"))
+        fig_ind.add_trace(go.Bar(name="Quality rate", x=fechas, y=qual, marker_color="#3b82f6"))
+        fig_ind.add_trace(go.Scatter(name="OEE", x=fechas, y=oees, mode="lines+markers", marker=dict(color="#111827")))
+        fig_ind.update_layout(barmode="group", yaxis_title="%", xaxis_tickangle=-45, template="plotly_white")
 
-        fig_oee, ax = plt.subplots(figsize=(4, 2.2))
-        sns.lineplot(x=fechas, y=oees, marker="o", ax=ax, color="#2563eb")
-        ax.set_ylabel("OEE %")
-        ax.set_ylim(0, 100)
-        ax.set_xticks(range(len(fechas)))
-        ax.set_xticklabels(fechas, rotation=45, ha="right")
-        ax.grid(axis="y", linestyle="--", alpha=0.5)
-        fig_oee.tight_layout()
+        fig_sum = go.Figure()
+        fig_sum.add_trace(
+            go.Bar(
+                y=["OEE", "Availability", "Effectivity", "Quality rate"],
+                x=[stats["oee_prom"], stats["avail_prom"], stats["perf_prom"], stats["qual_prom"]],
+                orientation="h",
+                marker_color=["#111827", "#10b981", "#f59e0b", "#3b82f6"],
+                text=[
+                    f"{stats['oee_prom']:.0f}%",
+                    f"{stats['avail_prom']:.0f}%",
+                    f"{stats['perf_prom']:.0f}%",
+                    f"{stats['qual_prom']:.0f}%",
+                ],
+                textposition="inside",
+            )
+        )
+        fig_sum.update_layout(xaxis=dict(title="%", range=[0, 110]), template="plotly_white")
 
-        self._add_plot_card("Producción", fig_prod, 0, 0)
-        self._add_plot_card("OEE %", fig_oee, 0, 1)
+        self._add_plot_card("Indicadores", fig_ind, 0, 0)
+        self._add_plot_card("Resumen", fig_sum, 0, 1)
+
+        try:
+            fig_ind.show()
+            fig_sum.show()
+        except Exception:
+            pass
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
