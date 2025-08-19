@@ -228,6 +228,18 @@ def producido_por_molde_global(molde_id: str, hasta_fecha: str = None) -> int:
 def enviados_por_orden(orden: str) -> int:
     return sum(parse_int_str(r.get("qty","0")) for r in leer_csv_dict(SHIPMENTS_CSV) if r.get("orden")==orden)
 
+def enviados_por_molde(molde_id: str) -> int:
+    """Cantidad total enviada asociada a un molde (todas las órdenes)."""
+    orden_a_molde = {
+        r.get("orden", "").strip(): r.get("molde_id", "").strip()
+        for r in leer_csv_dict(PLANNING_CSV)
+    }
+    total = 0
+    for r in leer_csv_dict(SHIPMENTS_CSV):
+        if orden_a_molde.get(r.get("orden", "").strip()) == str(molde_id).strip():
+            total += parse_int_str(r.get("qty", "0"))
+    return total
+
 # ===== resumen por máquina (hoy) con fallback robusto =====
 def _safe_float(x, default=0.0):
     try: return float(str(x).replace(",",".")) if x not in (None,"") else default
@@ -884,10 +896,11 @@ class LiveDashboard(ctk.CTkFrame):
                     molde = p.get("molde_id", "")
                     qty_total = parse_int_str(p.get("qty_total", "0"))
                     prod = producido_por_molde_global(molde)
-                    shipped = enviados_por_orden(orden)
-                    disp = max(0, prod - shipped)
+                    shipped_order = enviados_por_orden(orden)
+                    shipped_total = enviados_por_molde(molde)
+                    disp = max(0, prod - shipped_total)
                     frac_prod = (prod / qty_total) if qty_total > 0 else 0.0
-                    frac_ship = (shipped / qty_total) if qty_total > 0 else 0.0
+                    frac_ship = (shipped_order / qty_total) if qty_total > 0 else 0.0
                     try:
                         dleft = (
                             datetime.strptime(p.get("fin_est_ts", ""), "%Y-%m-%d").date()
@@ -905,7 +918,7 @@ class LiveDashboard(ctk.CTkFrame):
                         text=f"Producidas: {prod}/{qty_total} pzs"
                     )
                     card["lbl_ship"].configure(
-                        text=f"Enviado: {shipped}/{qty_total} pzs  •  Disponible: {disp}"
+                        text=f"Enviado: {shipped_order}/{qty_total} pzs  •  Disponible: {disp}"
                     )
                     card["lbl_days"].configure(text=days_left)
                 else:
@@ -2143,10 +2156,11 @@ class OrdersBoardView(ctk.CTkFrame):
             ini=r.get("inicio_ts",""); fin=r.get("fin_est_ts",""); setup=r.get("setup_min","0")
             estado=r.get("estado","plan")
             prod = producido_por_molde_global(molde)
-            shipped = enviados_por_orden(orden)
-            disp = max(0, prod - shipped)
+            shipped_order = enviados_por_orden(orden)
+            shipped_total = enviados_por_molde(molde)
+            disp = max(0, prod - shipped_total)
             frac_prod = (prod/qty_total) if qty_total>0 else 0.0
-            frac_ship = (shipped/qty_total) if qty_total>0 else 0.0
+            frac_ship = (shipped_order/qty_total) if qty_total>0 else 0.0
             bg,fg = self._tone(frac_prod)
 
             try:
@@ -2174,7 +2188,7 @@ class OrdersBoardView(ctk.CTkFrame):
             ctk.CTkLabel(card, text="Progreso de salidas / embarques").pack(anchor="w", padx=12)
             bars=ctk.CTkProgressBar(card); bars.set(frac_ship); bars.pack(fill="x", padx=12)
             row2=ctk.CTkFrame(card, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(4,10))
-            ctk.CTkLabel(row2, text=f"Enviado: {shipped}/{qty_total} pzs  •  Disponible: {disp}").pack(side="left")
+            ctk.CTkLabel(row2, text=f"Enviado: {shipped_order}/{qty_total} pzs  •  Disponible: {disp}").pack(side="left")
             ctk.CTkButton(row2, text="Registrar salida", command=lambda o=orden: self.app.go_shipments(o)).pack(side="right", padx=(6,0))
             ctk.CTkButton(row2, text="Ver planificación", fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
                           command=self.app.go_planning).pack(side="right")
@@ -2290,9 +2304,10 @@ class ShipmentsView(ctk.CTkFrame):
         molde = orow.get("molde_id","")
         qty_total = parse_int_str(orow.get("qty_total","0"))
         prod = producido_por_molde_global(molde)
-        shipped = enviados_por_orden(o)
-        disp = max(0, prod - shipped)
-        self.stats.configure(text=f"Orden {o} • Molde {molde} • Qty total {qty_total} • Producidas {prod} • Enviadas {shipped} • Disponibles {disp}")
+        shipped_order = enviados_por_orden(o)
+        shipped_total = enviados_por_molde(molde)
+        disp = max(0, prod - shipped_total)
+        self.stats.configure(text=f"Orden {o} • Molde {molde} • Qty total {qty_total} • Producidas {prod} • Enviadas {shipped_order} • Disponibles {disp}")
 
     def _reload_table(self):
         for i in self.tree.get_children(): self.tree.delete(i)
@@ -2312,7 +2327,7 @@ class ShipmentsView(ctk.CTkFrame):
         if not orow:
             messagebox.showwarning("Orden","No existe la orden."); return
         molde = orow.get("molde_id",""); prod = producido_por_molde_global(molde)
-        shipped = enviados_por_orden(o); disp=max(0, prod - shipped)
+        shipped_total = enviados_por_molde(molde); disp=max(0, prod - shipped_total)
         if q > disp:
             messagebox.showwarning("Límite","No puedes enviar más de lo disponible. Disp: "+str(disp)); return
         dest=self.e_dest.get().strip(); nota=self.e_note.get().strip()
