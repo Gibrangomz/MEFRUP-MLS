@@ -18,6 +18,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+import numpy as np
+from plotly.subplots import make_subplots
 
 # ---------- rutas / const ----------
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -208,6 +210,361 @@ def parse_int_str(s, default=0):
         return int(float(s))
     except:
         return default
+
+# ---------- Reportes ALS ----------
+
+def _fmt_hhmm(hours: float) -> str:
+    """Convierte horas decimales a string h:mm."""
+    minutes = int(round((hours or 0) * 60))
+    return f"{minutes // 60}:{minutes % 60:02d}"
+
+
+def _track_color(pct: float) -> str:
+    """Color de fondo según porcentaje (0-100)."""
+    if pct >= 85:
+        return "#dcfce7"  # verde
+    if pct >= 60:
+        return "#fef3c7"  # ámbar
+    return "#fee2e2"       # rojo
+
+
+def _prepare_oee_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Asegura columnas numéricas y calcula A/P/Q/OEE faltantes."""
+    df = df.copy()
+    cols = [
+        "planned_busy_time_h",
+        "nominal_production_time_h",
+        "production_time_h",
+        "planned_downtime_h",
+        "standstills_h",
+        "ideal_cycle_time_s",
+        "produced_parts",
+        "good_parts",
+        "scrap_parts",
+        "availability",
+        "effectivity",
+        "quality_rate",
+        "oee",
+    ]
+    for c in cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if "good_parts" not in df.columns and {"produced_parts", "scrap_parts"}.issubset(df.columns):
+        df["good_parts"] = df["produced_parts"] - df["scrap_parts"]
+    if "scrap_parts" not in df.columns and {"produced_parts", "good_parts"}.issubset(df.columns):
+        df["scrap_parts"] = df["produced_parts"] - df["good_parts"]
+
+    if "availability" not in df.columns or df["availability"].isna().any():
+        df["availability"] = df["production_time_h"] / df["nominal_production_time_h"]
+    if "effectivity" not in df.columns or df["effectivity"].isna().any():
+        df["effectivity"] = (
+            df["produced_parts"] * df["ideal_cycle_time_s"]
+        ) / (df["production_time_h"] * 3600)
+    if "quality_rate" not in df.columns or df["quality_rate"].isna().any():
+        df["quality_rate"] = np.where(
+            df["produced_parts"] > 0,
+            df["good_parts"] / df["produced_parts"],
+            1.0,
+        )
+    if "oee" not in df.columns or df["oee"].isna().any():
+        df["oee"] = df["availability"] * df["effectivity"] * df["quality_rate"]
+
+    for c in ["availability", "quality_rate"]:
+        df[c] = df[c].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+    df["effectivity"] = df["effectivity"].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+    df["oee"] = (
+        df["availability"] * df["effectivity"] * df["quality_rate"]
+    ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+    return df
+
+
+def plot_turnos(df_filtrado: pd.DataFrame, por_turno: bool = True) -> go.Figure:
+    """Barras agrupadas A/P/Q con línea OEE por turno o día."""
+    df = _prepare_oee_df(df_filtrado)
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(template="plotly_white", width=CHART_W, height=CHART_H)
+        return fig
+
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+    if por_turno:
+        df = df.sort_values(["fecha", "turno"])
+        labels = df["fecha"].dt.strftime("%d/%m") + " • " + df["turno"].astype(str)
+    else:
+        agg = {
+            "planned_busy_time_h": "sum",
+            "nominal_production_time_h": "sum",
+            "production_time_h": "sum",
+            "planned_downtime_h": "sum",
+            "standstills_h": "sum",
+            "ideal_cycle_time_s": "mean",
+            "produced_parts": "sum",
+            "good_parts": "sum",
+            "scrap_parts": "sum",
+        }
+        df = df.groupby("fecha", as_index=False).agg(agg)
+        df = _prepare_oee_df(df)
+        labels = df["fecha"].dt.strftime("%d/%m")
+
+    avail = (df["availability"] * 100).clip(0, 100)
+    perf_real = df["effectivity"] * 100
+    perf = perf_real.clip(0, 110)
+    qual = (df["quality_rate"] * 100).clip(0, 100)
+    oee = (df["oee"] * 100).clip(0, 100)
+
+    customdata = np.column_stack(
+        [
+            avail,
+            perf_real,
+            qual,
+            oee,
+            df["nominal_production_time_h"].apply(_fmt_hhmm),
+            df["production_time_h"].apply(_fmt_hhmm),
+            (df["planned_downtime_h"] + df["standstills_h"]).apply(_fmt_hhmm),
+            df["good_parts"],
+            df["scrap_parts"],
+            df["produced_parts"],
+        ]
+    )
+    hover = (
+        "A: %{customdata[0]:.1f}%<br>"
+        "P: %{customdata[1]:.1f}%<br>"
+        "Q: %{customdata[2]:.1f}%<br>"
+        "OEE: %{customdata[3]:.1f}%<br>"
+        "Nominal: %{customdata[4]} h<br>"
+        "Producción: %{customdata[5]} h<br>"
+        "Paros: %{customdata[6]} h<br>"
+        "Buenas: %{customdata[7]}<br>"
+        "Malas: %{customdata[8]}<br>"
+        "Total: %{customdata[9]}<extra></extra>"
+    )
+
+    fig = go.Figure()
+    fig.add_bar(
+        name="Availability",
+        x=labels,
+        y=avail,
+        marker_color="#10b981",
+        customdata=customdata,
+        hovertemplate=hover,
+    )
+    fig.add_bar(
+        name="Effectivity",
+        x=labels,
+        y=perf,
+        marker_color="#f59e0b",
+        customdata=customdata,
+        hovertemplate=hover,
+    )
+    fig.add_bar(
+        name="Quality rate",
+        x=labels,
+        y=qual,
+        marker_color="#3b82f6",
+        customdata=customdata,
+        hovertemplate=hover,
+    )
+    fig.add_scatter(
+        name="OEE",
+        x=labels,
+        y=oee,
+        mode="lines+markers+text",
+        marker=dict(color="#111827"),
+        text=[f"{v:.0f}%" for v in oee],
+        textposition="top center",
+        customdata=customdata,
+        hovertemplate=hover,
+    )
+    fig.update_layout(
+        title="Indicadores por turno" if por_turno else "Indicadores por día",
+        barmode="group",
+        yaxis=dict(range=[0, 110], ticksuffix="%"),
+        xaxis_tickangle=-45,
+        template="plotly_white",
+        width=CHART_W,
+        height=CHART_H,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=60, r=30, t=40, b=80),
+    )
+    return fig
+
+
+def panel_kpis(df_filtrado: pd.DataFrame) -> go.Figure:
+    """Panel horizontal de KPIs agregados del periodo."""
+    df = _prepare_oee_df(df_filtrado)
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(template="plotly_white", width=CHART_W, height=CHART_H)
+        return fig
+
+    weights = df["nominal_production_time_h"].fillna(0)
+    wsum = weights.sum()
+    if wsum <= 0:
+        weights = None
+    avail = np.average(df["availability"], weights=weights) if weights is not None else df["availability"].mean()
+    perf = np.average(df["effectivity"], weights=weights) if weights is not None else df["effectivity"].mean()
+    qual = np.average(df["quality_rate"], weights=weights) if weights is not None else df["quality_rate"].mean()
+    oee = avail * perf * qual
+
+    labels = ["OEE", "Availability", "Effectivity", "Quality rate"]
+    values = [oee * 100, avail * 100, perf * 100, qual * 100]
+    colors = ["#111827", "#10b981", "#f59e0b", "#3b82f6"]
+    tracks = [_track_color(v) for v in values]
+
+    fig = go.Figure()
+    fig.add_bar(
+        y=labels,
+        x=[110] * 4,
+        orientation="h",
+        marker=dict(color=tracks, opacity=0.4),
+        showlegend=False,
+        hoverinfo="skip",
+    )
+    fig.add_bar(
+        y=labels,
+        x=values,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v:.0f}%" for v in values],
+        textposition="outside",
+    )
+    fig.update_layout(
+        title="KPIs del periodo",
+        xaxis=dict(title="%", range=[0, 110], ticksuffix="%"),
+        template="plotly_white",
+        width=CHART_W,
+        height=CHART_H,
+        margin=dict(l=120, r=40, t=40, b=40),
+    )
+    return fig
+
+
+def kpi_card(df_filtrado: pd.DataFrame) -> go.Figure:
+    """Tabla con métricas agregadas del rango."""
+    df = _prepare_oee_df(df_filtrado)
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(template="plotly_white", width=CHART_W, height=CHART_H)
+        return fig
+
+    planned = df["planned_busy_time_h"].sum()
+    nominal = df["nominal_production_time_h"].sum()
+    production = df["production_time_h"].sum()
+    standstills = df["planned_downtime_h"].sum() + df["standstills_h"].sum()
+    good = df["good_parts"].sum()
+    bad = df["scrap_parts"].sum()
+    total = df["produced_parts"].sum()
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        specs=[[{"type": "table"}], [{"type": "table"}]],
+        vertical_spacing=0.12,
+    )
+
+    fig.add_table(
+        header=dict(values=["Métrica", "Valor"]),
+        cells=dict(
+            values=[
+                [
+                    "Planned busy time",
+                    "Nominal production time",
+                    "Production time",
+                    "Total standstills",
+                    "Good parts",
+                    "Bad parts",
+                    "Total parts",
+                ],
+                [
+                    _fmt_hhmm(planned),
+                    _fmt_hhmm(nominal),
+                    _fmt_hhmm(production),
+                    _fmt_hhmm(standstills),
+                    int(good),
+                    int(bad),
+                    int(total),
+                ],
+            ]
+        ),
+        row=1,
+        col=1,
+    )
+
+    stats = df[["availability", "effectivity", "quality_rate", "oee"]].replace(
+        [np.inf, -np.inf], np.nan
+    ) * 100
+    stat_min = stats.min().round(2)
+    stat_max = stats.max().round(2)
+    stat_mean = stats.mean().round(2)
+    stat_std = stats.std(ddof=0).round(2)
+
+    fig.add_table(
+        header=dict(values=["Métrica", "Mín", "Máx", "Promedio", "DesvEst"]),
+        cells=dict(
+            values=[
+                ["Availability", "Effectivity", "Quality rate", "OEE"],
+                [f"{v:.2f}%" for v in stat_min],
+                [f"{v:.2f}%" for v in stat_max],
+                [f"{v:.2f}%" for v in stat_mean],
+                [f"{v:.2f}%" for v in stat_std],
+            ]
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.update_layout(
+        title="Métricas del rango",
+        template="plotly_white",
+        width=CHART_W,
+        height=450,
+        margin=dict(t=40, l=20, r=20, b=20),
+    )
+    return fig
+
+
+def heatmap_oee(df_filtrado: pd.DataFrame) -> go.Figure:
+    """Mapa de calor OEE por día y turno."""
+    df = _prepare_oee_df(df_filtrado)
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(template="plotly_white", width=CHART_W, height=CHART_H)
+        return fig
+
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+    df["oee_pct"] = (df["oee"] * 100).clip(0, 100)
+    pivot = df.pivot_table(index="fecha", columns="turno", values="oee_pct", aggfunc="mean")
+    pivot = pivot.sort_index()
+    fechas = pivot.index.strftime("%d/%m").tolist()
+    turnos = ["S1", "S2", "S3"]
+    z = pivot.reindex(columns=turnos).values
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            x=turnos,
+            y=fechas,
+            z=z,
+            zmin=0,
+            zmax=100,
+            colorscale="RdYlGn",
+            colorbar=dict(title="%"),
+            hovertemplate="Fecha %{y}<br>Turno %{x}<br>OEE %{z:.1f}%<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="Mapa de calor OEE",
+        template="plotly_white",
+        width=CHART_W,
+        height=CHART_H,
+        yaxis_autorange="reversed",
+        margin=dict(l=60, r=30, t=40, b=40),
+    )
+    return fig
 
 # ===== producidas por molde (para milestones/órdenes) =====
 def producido_por_molde_global(molde_id: str, hasta_fecha: str = None) -> int:
