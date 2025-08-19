@@ -53,7 +53,7 @@ PLANNING_CSV = os.path.join(BASE_DIR, "planning.csv")   # orden, parte, molde_id
 DELIV_CSV    = os.path.join(BASE_DIR, "deliveries.csv") # orden, due_date, qty, cumplido(0/1)
 
 # NUEVO: salidas / embarques
-SHIPMENTS_CSV = os.path.join(BASE_DIR, "shipments.csv") # orden, ship_date, qty, destino, nota
+SHIPMENTS_CSV = os.path.join(BASE_DIR, "shipments.csv") # orden, ship_date, qty, destino, nota, approved(0/1)
 
 OPERADORES   = ["OPERADOR 1", "OPERADOR 2", "OPERADOR 3"]
 TURNOS_HORAS = {1: 8, 2: 8, 3: 8}
@@ -116,7 +116,7 @@ def asegurar_archivos_basicos():
             w.writerow(["84","19-001-084","23","1","1","2","1"])
     asegurar_csv(PLANNING_CSV, ["orden","parte","molde_id","maquina_id","qty_total","inicio_ts","fin_est_ts","setup_min","estado","ciclo_s","cav_on"])
     asegurar_csv(DELIV_CSV,    ["orden","due_date","qty","cumplido"])
-    asegurar_csv(SHIPMENTS_CSV,["orden","ship_date","qty","destino","nota"])
+    asegurar_csv(SHIPMENTS_CSV,["orden","ship_date","qty","destino","nota","approved"])
 
 def asegurar_archivos_maquina(machine):
     asegurar_csv(machine["oee_csv"], [
@@ -245,7 +245,11 @@ def producido_por_molde_global(molde_id: str, hasta_fecha: str = None) -> int:
     return total_buenas
 
 def enviados_por_orden(orden: str) -> int:
-    return sum(parse_int_str(r.get("qty","0")) for r in leer_csv_dict(SHIPMENTS_CSV) if r.get("orden")==orden)
+    return sum(
+        parse_int_str(r.get("qty", "0"))
+        for r in leer_csv_dict(SHIPMENTS_CSV)
+        if r.get("orden") == orden and r.get("approved", "1") == "1"
+    )
 
 def enviados_por_molde(molde_id: str) -> int:
     """Cantidad total enviada asociada a un molde (todas las órdenes)."""
@@ -255,7 +259,10 @@ def enviados_por_molde(molde_id: str) -> int:
     }
     total = 0
     for r in leer_csv_dict(SHIPMENTS_CSV):
-        if orden_a_molde.get(r.get("orden", "").strip()) == str(molde_id).strip():
+        if (
+            r.get("approved", "1") == "1"
+            and orden_a_molde.get(r.get("orden", "").strip()) == str(molde_id).strip()
+        ):
             total += parse_int_str(r.get("qty", "0"))
     return total
 
@@ -1307,6 +1314,7 @@ class MainMenu(ctk.CTkFrame):
             {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
             {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
             {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
+            {"text": "Inventario", "command": app.go_inventory, "height": 44},
             {"text": "Salida de Piezas (Embarques)", "command": app.go_shipments, "height": 44},
         ]
 
@@ -1372,6 +1380,7 @@ class App(ctk.CTk):
         self.planning_page = None
         self.orders_board_page = None
         self.reports_page = None
+        self.inventory_page = None
         self.shipments_page = None
         self._shipments_preselect_order = None
 
@@ -1464,6 +1473,11 @@ class App(ctk.CTk):
         if not self.reports_page:
             self.reports_page = ReportsView(self.container, self)
         self._pack_only(self.reports_page)
+
+    def go_inventory(self):
+        if not self.inventory_page:
+            self.inventory_page = InventoryView(self.container, self)
+        self._pack_only(self.inventory_page)
 
     def go_shipments(self, preselect_order: str|None=None):
         self._shipments_preselect_order = preselect_order
@@ -2229,6 +2243,116 @@ class OrdersBoardView(ctk.CTkFrame):
         self._timer = self.after(6000, self._refresh_cards)
 
 # ================================
+# === Inventario de Piezas
+# ================================
+class InventoryView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self._build()
+
+    def _build(self):
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
+        header.pack(fill="x", side="top")
+        left = ctk.CTkFrame(header, fg_color="transparent"); left.pack(side="left", padx=16, pady=10)
+        ctk.CTkButton(left, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
+                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(0,10))
+        ctk.CTkLabel(left, text="Inventario", font=ctk.CTkFont("Helvetica", 20, "bold")).pack(side="left")
+        right = ctk.CTkFrame(header, fg_color="transparent"); right.pack(side="right", padx=16, pady=10)
+        ctk.CTkButton(right, text="↻ Actualizar", command=self._reload_table).pack(side="right")
+
+        body = ctk.CTkFrame(self, corner_radius=18)
+        body.pack(fill="both", expand=True, padx=16, pady=16)
+        self.summary_lbl = ctk.CTkLabel(body, text="—", text_color=("#6b7280","#9CA3AF"))
+        self.summary_lbl.pack(anchor="w", padx=12, pady=(10,6))
+        self.pending_box = ctk.CTkFrame(body, fg_color="transparent")
+        self.pending_box.pack(fill="x", padx=12, pady=(0,10))
+        ctk.CTkLabel(body, text="Inventario por Orden", font=ctk.CTkFont("Helvetica", 14, "bold"))\
+            .pack(anchor="w", padx=12, pady=(0,6))
+        ctk.CTkFrame(body, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
+        cols=("orden","parte","molde","producidas","env_ord","env_molde","disp")
+        self.tree=ttk.Treeview(body, columns=cols, show="headings", height=12)
+        headers=[
+            ("orden","Orden",90),
+            ("parte","Parte",150),
+            ("molde","Molde",80),
+            ("producidas","Producidas",110),
+            ("env_ord","Env. ord",90),
+            ("env_molde","Env. molde",110),
+            ("disp","Disp.",90)
+        ]
+        for k,t,w in headers:
+            self.tree.heading(k, text=t); self.tree.column(k, width=w, anchor="center")
+        self.tree.pack(fill="both", expand=True, padx=12, pady=(0,12))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(fill="x", padx=16, pady=(0,16))
+        ctk.CTkButton(btns, text="Registrar salida", command=self._open_shipments).pack(side="left")
+        ctk.CTkButton(btns, text="↻ Actualizar", command=self._reload_table).pack(side="right")
+
+        self._reload_table()
+
+    def _open_shipments(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Orden", "Selecciona una orden.")
+            return
+        order = self.tree.item(sel[0], "values")[0]
+        self.app.go_shipments(order)
+
+    def _reload_table(self):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        total_orders = 0
+        total_prod = 0
+        molds_seen = set()
+        for r in leer_csv_dict(PLANNING_CSV):
+            orden = r.get("orden", "")
+            parte = r.get("parte", "")
+            molde = r.get("molde_id", "")
+            prod = producido_por_molde_global(molde)
+            shipped_ord = enviados_por_orden(orden)
+            shipped_total = enviados_por_molde(molde)
+            disp = max(0, prod - shipped_total)
+            self.tree.insert("", "end", values=(orden, parte, molde, prod, shipped_ord, shipped_total, disp))
+            total_orders += 1
+            if molde not in molds_seen:
+                total_prod += prod
+                molds_seen.add(molde)
+        self.summary_lbl.configure(text=f"Total órdenes {total_orders} • Total producidas {total_prod}")
+        self._reload_pending()
+
+    def _reload_pending(self):
+        for w in self.pending_box.winfo_children():
+            w.destroy()
+        orden_a_molde = {r.get("orden","" ): r.get("molde_id","") for r in leer_csv_dict(PLANNING_CSV)}
+        for r in leer_csv_dict(SHIPMENTS_CSV):
+            if r.get("approved","1") != "1":
+                orden = r.get("orden","")
+                qty = parse_int_str(r.get("qty","0"))
+                molde = orden_a_molde.get(orden,"")
+                card = ctk.CTkFrame(self.pending_box, corner_radius=12)
+                card.pack(fill="x", pady=4)
+                ctk.CTkLabel(card, text=f"Salida pendiente: {qty} piezas molde {molde}").pack(side="left", padx=8, pady=8)
+                ctk.CTkButton(card, text="Aprobar", command=lambda rr=r: self._approve_shipment(rr)).pack(side="right", padx=8, pady=8)
+
+    def _approve_shipment(self, row):
+        rows = leer_csv_dict(SHIPMENTS_CSV)
+        done = False
+        new = []
+        for r in rows:
+            if not done and r.get("orden") == row.get("orden") and r.get("ship_date") == row.get("ship_date") \
+               and r.get("qty") == row.get("qty") and r.get("destino") == row.get("destino") \
+               and r.get("nota") == row.get("nota") and r.get("approved","0") != "1":
+                r["approved"] = "1"
+                done = True
+            new.append(r)
+        with open(SHIPMENTS_CSV, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
+            w.writeheader(); w.writerows(new)
+        self._reload_table()
+
+# ================================
 # === Salida de Piezas (Embarques)
 # ================================
 class ShipmentsView(ctk.CTkFrame):
@@ -2370,10 +2494,12 @@ class ShipmentsView(ctk.CTkFrame):
             messagebox.showwarning("Límite","No puedes enviar más de lo disponible. Disp: "+str(disp)); return
         dest=self.e_dest.get().strip(); nota=self.e_note.get().strip()
         with open(SHIPMENTS_CSV,"a",newline="",encoding="utf-8") as f:
-            csv.writer(f).writerow([o,d,str(q),dest,nota])
+            csv.writer(f).writerow([o,d,str(q),dest,nota,"0"])
         self.e_qty.delete(0,"end"); self.e_dest.delete(0,"end"); self.e_note.delete(0,"end")
         self._refresh_stats(); self._reload_table()
-        messagebox.showinfo("Salida","Salida registrada.")
+        try: self.app.inventory_page._reload_table()
+        except Exception: pass
+        messagebox.showinfo("Salida","Salida registrada. Pendiente de aprobación.")
 
     def _delete_selected(self):
         sel=self.tree.selection()
@@ -2387,9 +2513,11 @@ class ShipmentsView(ctk.CTkFrame):
                 done=True; continue
             new.append(r)
         with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-            w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota"])
+            w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
             w.writeheader(); w.writerows(new)
         self._refresh_stats(); self._reload_table()
+        try: self.app.inventory_page._reload_table()
+        except Exception: pass
 
 # --- main ---
 if __name__ == "__main__":
