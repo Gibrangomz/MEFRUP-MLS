@@ -950,14 +950,16 @@ class ReportsView(ctk.CTkFrame):
         # tarjetas de estadísticos
         stats = ctk.CTkFrame(body, corner_radius=12, fg_color=("white", "#1c1c1e"))
         stats.grid(row=1, column=0, sticky="ew", pady=(0, 20))
-        stats.grid_columnconfigure((0, 1, 2), weight=1)
+        stats.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
+        self.card_total, self.lbl_total = self._create_card(stats, "Total", ("#E5E7EB", "#2B2B2B"))
+        self.card_total.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.card_buenas, self.lbl_buenas = self._create_card(stats, "Buenas", ("#DCFCE7", "#065F46"))
-        self.card_buenas.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.card_buenas.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
         self.card_scrap, self.lbl_scrap = self._create_card(stats, "Scrap", ("#FEE2E2", "#991B1B"))
-        self.card_scrap.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        self.card_scrap.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
         self.card_oee, self.lbl_oee = self._create_card(stats, "OEE Prom", ("#FEF9C3", "#92400E"))
-        self.card_oee.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
+        self.card_oee.grid(row=0, column=3, sticky="nsew", padx=6, pady=6)
 
         self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
         self.chart_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 20))
@@ -1022,6 +1024,7 @@ class ReportsView(ctk.CTkFrame):
         desde=self.desde_entry.get().strip()
         hasta=self.hasta_entry.get().strip()
         stats, data = resumen_rango_maquina(machine, desde, hasta)
+        self.lbl_total.configure(text=str(stats["total"]))
         self.lbl_buenas.configure(text=str(stats["buenas"]))
         self.lbl_scrap.configure(text=str(stats["scrap"]))
         self.lbl_oee.configure(text=f"{stats['oee_prom']:.2f}%")
