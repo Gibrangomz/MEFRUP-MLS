@@ -7,10 +7,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from PIL import Image
 from tkcalendar import Calendar
-import csv, os, logging, traceback, io
+import csv, os, logging, traceback, io, tempfile
 from datetime import datetime, date, timedelta
 import pandas as pd
 from fpdf import FPDF
+from openpyxl import load_workbook
+from openpyxl.drawing.image import Image as XLImage
 
 import matplotlib
 matplotlib.use("Agg")
@@ -915,6 +917,7 @@ class ReportsView(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.app = app
         self._plot_imgs = []
+        self._plot_bytes = []
         self._last_data = []
         self._last_stats = {}
         self._build()
@@ -1028,8 +1031,8 @@ class ReportsView(ctk.CTkFrame):
             fig.set_size_inches(7.2, 4)
             fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", pad_inches=0.1)
             plt.close(fig)
-        buf.seek(0)
-        image = Image.open(buf)
+        img_bytes = buf.getvalue()
+        image = Image.open(io.BytesIO(img_bytes))
         ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(720, 400))
         card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
         card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
@@ -1041,6 +1044,7 @@ class ReportsView(ctk.CTkFrame):
         lbl.image = ctk_img
         lbl.pack(padx=12, pady=(0, 12), expand=True)
         self._plot_imgs.append(ctk_img)
+        self._plot_bytes.append(img_bytes)
 
     def _exportar(self):
         if not self._last_data:
@@ -1058,6 +1062,16 @@ class ReportsView(ctk.CTkFrame):
     def _export_excel(self, path: str):
         df = pd.DataFrame(self._last_data)
         df.to_excel(path, index=False)
+        wb = load_workbook(path)
+        ws = wb.active
+        start_row = len(df) + 3
+        for img_bytes in self._plot_bytes:
+            stream = io.BytesIO(img_bytes)
+            img = XLImage(stream)
+            img.width, img.height = 720, 400
+            ws.add_image(img, f"A{start_row}")
+            start_row += 25
+        wb.save(path)
 
     def _export_pdf(self, path: str):
         df = pd.DataFrame(self._last_data)
@@ -1093,6 +1107,16 @@ class ReportsView(ctk.CTkFrame):
         ]
         for k, v in stats_lines:
             pdf.cell(0, 6, f"{k}: {v}", ln=True)
+        pdf.ln(4)
+        for img_bytes in self._plot_bytes:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                tmp.write(img_bytes)
+                tmp_path = tmp.name
+            img_w = pdf.w - 2 * pdf.l_margin
+            img_h = img_w * 400 / 720
+            pdf.image(tmp_path, w=img_w, h=img_h)
+            os.remove(tmp_path)
+            pdf.ln(4)
         pdf.output(path)
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
@@ -1131,6 +1155,7 @@ class ReportsView(ctk.CTkFrame):
         for w in self.chart_frame.winfo_children():
             w.destroy()
         self._plot_imgs.clear()
+        self._plot_bytes.clear()
         if not data:
             ctk.CTkLabel(self.chart_frame, text="Sin datos para el rango seleccionado").pack(expand=True)
             return
@@ -1148,7 +1173,7 @@ class ReportsView(ctk.CTkFrame):
         fig_ind.add_trace(go.Scatter(name="OEE", x=fechas, y=oees, mode="lines+markers", marker=dict(color="#111827")))
         fig_ind.update_layout(barmode="group", yaxis_title="%", xaxis_tickangle=-45,
                               template="plotly_white", width=720, height=400,
-                              margin=dict(l=60, r=30, t=40, b=120))
+                              margin=dict(l=60, r=30, t=40, b=80))
 
         fig_sum = go.Figure()
         fig_sum.add_trace(
