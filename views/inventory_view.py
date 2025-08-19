@@ -69,17 +69,17 @@ class InventoryView(ctk.CTkFrame):
             .pack(anchor="w", padx=12, pady=(10,6))
         ctk.CTkFrame(body, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
 
-        cols=("orden","parte","molde","producidas","env_ord","env_molde","disp")
+        cols=("orden","parte","molde","objetivo","enviado","asignado","progreso","pendiente")
         self.tree=ttk.Treeview(body, columns=cols, show="headings", height=12)
         headers=[
             ("orden","Orden",90),
             ("parte","Parte",150),
             ("molde","Molde",80),
-            # <-- AHORA mostramos neto por molde (no bruto)
-            ("producidas","Producidas (netas)",130),
-            ("env_ord","Env. ord (aprob)",120),
-            ("env_molde","Env. molde (aprob)",140),
-            ("disp","Disp. (netas)",120)
+            ("objetivo","Objetivo",90),
+            ("enviado","Enviado",90),
+            ("asignado","Asignado",100),
+            ("progreso","Progreso",100),
+            ("pendiente","Pendiente",100)
         ]
         for k,t,w in headers:
             self.tree.heading(k, text=t); self.tree.column(k, width=w, anchor="center")
@@ -108,37 +108,28 @@ class InventoryView(ctk.CTkFrame):
         for i in self.tree.get_children():
             self.tree.delete(i)
 
-        orders = leer_csv_dict(PLANNING_CSV)
+        datos, totales = inventario_fifo()
+        for r in datos:
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    r["orden"],
+                    r["parte"],
+                    r["molde"],
+                    r["objetivo"],
+                    r["enviado"],
+                    r["asignado"],
+                    r["progreso"],
+                    r["pendiente"],
+                ),
+            )
 
-        # Precalcular por molde: bruto, enviados aprobados y NETO
-        moldes = sorted({ (r.get("molde_id","") or "").strip() for r in orders })
-        bruto_por_molde = {m: int(producido_por_molde_global(m) or 0) for m in moldes}
-        enviados_por_molde_ap = {m: self._sum_shipped_by_mold(m) for m in moldes}
-        neto_por_molde = {m: max(0, bruto_por_molde[m] - enviados_por_molde_ap[m]) for m in moldes}
-
-        # Insertar filas: para cada orden mostrar el NETO del molde (así en cada orden del mismo molde verás 2,000, no 7,000)
-        for r in orders:
-            orden = (r.get("orden", "") or "").strip()
-            parte = (r.get("parte", "") or "").strip()
-            molde = (r.get("molde_id", "") or "").strip()
-
-            neto_molde = neto_por_molde.get(molde, 0)              # <- aquí está el cambio clave
-            shipped_ord_aprob = self._sum_shipped_by_order(orden)
-            shipped_mold_aprob = enviados_por_molde_ap.get(molde, 0)
-
-            # "Disp." = el mismo neto global del molde (stock real disponible)
-            disp = neto_molde
-
-            self.tree.insert("", "end", values=(
-                orden, parte, molde, neto_molde, shipped_ord_aprob, shipped_mold_aprob, disp
-            ))
-
-        # Totales: bruto vs neto global
-        bruto_global = sum(bruto_por_molde.values())
-        enviados_global = self._sum_shipped_total_approved()
-        neto_global = max(0, bruto_global - enviados_global)
         self.lbl_totals.configure(
-            text=f"Órdenes: {len(orders)} • Bruto: {bruto_global} • Enviadas(✔): {enviados_global} • Stock neto: {neto_global}"
+            text=(
+                f"Órdenes: {len(datos)} • Producción: {totales['produccion']}"
+                f" • Enviadas(✔): {totales['enviados']} • Stock neto: {totales['stock']}"
+            )
         )
 
         self._reload_pending_cards()

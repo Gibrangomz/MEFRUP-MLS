@@ -103,16 +103,20 @@ class ShipmentsView(ctk.CTkFrame):
         if not orow:
             self.stats.configure(text="—"); return
         molde = orow.get("molde_id","")
-        qty_total = parse_int_str(orow.get("qty_total","0"))
-        prod = producido_por_molde_global(molde)
-        shipped_order = enviados_por_orden(o)
-        shipped_total = enviados_por_molde(molde)
-        disp = max(0, prod - shipped_total)
+        datos, _ = inventario_fifo()
+        info = next((r for r in datos if r["orden"] == o), None)
+        if not info:
+            self.stats.configure(text="—"); return
+        qty_total = info["objetivo"]
+        enviado = info["enviado"]
+        asignado = info["asignado"]
+        progreso = info["progreso"]
+        pendiente = info["pendiente"]
         self.stats.configure(
             text=(
-                f"Orden {o} • Molde {molde} • Qty total {qty_total} • Producidas {prod}"
-                f" • Enviadas orden {shipped_order} • Enviadas molde {shipped_total}"
-                f" • Disponibles {disp}"
+                f"Orden {o} • Molde {molde} • Objetivo {qty_total}"
+                f" • Enviado {enviado} • Asignado {asignado}"
+                f" • Progreso {progreso} • Pendiente {pendiente}"
             )
         )
 
@@ -130,13 +134,13 @@ class ShipmentsView(ctk.CTkFrame):
         q=parse_int_str(self.e_qty.get().strip(),0)
         if not (d and q>0):
             messagebox.showwarning("Salida","Fecha y cantidad (>0) obligatorias."); return
-        orow = next((r for r in leer_csv_dict(PLANNING_CSV) if r.get("orden")==o), None)
-        if not orow:
+        datos, _ = inventario_fifo()
+        info = next((r for r in datos if r["orden"] == o), None)
+        if not info:
             messagebox.showwarning("Orden","No existe la orden."); return
-        molde = orow.get("molde_id",""); prod = producido_por_molde_global(molde)
-        shipped_total = enviados_por_molde(molde); disp=max(0, prod - shipped_total)
-        if q > disp:
-            messagebox.showwarning("Límite","No puedes enviar más de lo disponible. Disp: "+str(disp)); return
+        asignado = info["asignado"]
+        if q > asignado:
+            messagebox.showwarning("Límite","No puedes enviar más de lo asignado. Asignado: "+str(asignado)); return
         dest=self.e_dest.get().strip(); nota=self.e_note.get().strip()
         with open(SHIPMENTS_CSV,"a",newline="",encoding="utf-8") as f:
             csv.writer(f).writerow([o,d,str(q),dest,nota,"0"])

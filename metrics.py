@@ -205,6 +205,65 @@ def enviados_por_molde(molde_id: str) -> int:
     return total
 
 
+def inventario_fifo():
+    """Distribuye el inventario neto por molde entre sus órdenes (FIFO).
+
+    Retorna una tupla ``(rows, totals)`` donde ``rows`` es una lista de
+    diccionarios por orden con las claves:
+    ``orden``, ``parte``, ``molde``, ``objetivo``, ``enviado``, ``asignado``,
+    ``progreso`` y ``pendiente``. ``totals`` agrega producción total,
+    enviados aprobados y stock neto restante.
+    """
+
+    orders = leer_csv_dict(PLANNING_CSV)
+    by_mold = {}
+    for r in orders:
+        m = (r.get("molde_id", "") or "").strip()
+        if not m:
+            continue
+        by_mold.setdefault(m, []).append(r)
+
+    rows_out = []
+    totals = dict(produccion=0, enviados=0, stock=0)
+
+    for m, ords in by_mold.items():
+        ords.sort(key=lambda r: ((r.get("inicio_ts") or ""), r.get("orden", "")))
+        prod = producido_por_molde_global(m)
+        shipped_by_order = {o["orden"]: enviados_por_orden(o["orden"]) for o in ords}
+        shipped_total = sum(shipped_by_order.values())
+        neto = max(0, prod - shipped_total)
+
+        totals["produccion"] += prod
+        totals["enviados"] += shipped_total
+        totals["stock"] += neto
+
+        restante = neto
+        for o in ords:
+            orden = o.get("orden", "")
+            parte = o.get("parte", "")
+            objetivo = parse_int_str(o.get("qty_total", "0"))
+            enviado = shipped_by_order.get(orden, 0)
+            necesidad = max(0, objetivo - enviado)
+            asignado = min(necesidad, restante)
+            restante -= asignado
+            progreso = min(objetivo, enviado + asignado)
+            pendiente = max(0, objetivo - progreso)
+            rows_out.append(
+                dict(
+                    orden=orden,
+                    parte=parte,
+                    molde=m,
+                    objetivo=objetivo,
+                    enviado=enviado,
+                    asignado=asignado,
+                    progreso=progreso,
+                    pendiente=pendiente,
+                )
+            )
+
+    return rows_out, totals
+
+
 # ===== resumen por máquina (hoy) con fallback robusto =====
 def _safe_float(x, default=0.0):
     """Parsea un valor numérico tolerante removiendo comas y signos %."""
