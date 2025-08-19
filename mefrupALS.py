@@ -824,92 +824,103 @@ class LiveDashboard(ctk.CTkFrame):
         self._refresh_now()
 
     def _refresh_now(self):
-        # reloj
-        self.clock_lbl.configure(text=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-        hoy = date.today().isoformat()
-
-
-        # por máquina y promedio de área
-        total_area = scrap_area = meta_area = 0
-        plan_rows = leer_csv_dict(PLANNING_CSV)
-        for m in MACHINES:
-            r = resumen_hoy_maquina(m, hoy)
-            total_area += r["total"]
-            scrap_area += r["scrap"]
-            meta_area += r["meta"]
-            card = self.cards[m["id"]]
-            card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
-            card["A"].configure(text=f"A {r['A']:.2f}%")
-            card["P"].configure(text=f"P {r['P']:.2f}%")
-            card["Q"].configure(text=f"Q {r['Q']:.2f}%")
-            bg, fg = self._tone(r["oee"])
+        """Actualiza métricas en vivo y programa la siguiente actualización."""
+        if self._timer:
             try:
-                card["wrap"].configure(fg_color=bg)
-            except:
-                pass
-            # orden planificada para la máquina
-            futuros = [
-                p
-                for p in plan_rows
-                if p.get("maquina_id") == m["id"]
-                and (p.get("estado", "plan").lower() != "done")
-            ]
-            try:
-                futuros.sort(key=lambda p: p.get("inicio_ts", ""))
+                self.after_cancel(self._timer)
             except Exception:
                 pass
-            if futuros:
-                p = futuros[0]
-                orden = p.get("orden", "")
-                parte = p.get("parte", "")
-                molde = p.get("molde_id", "")
-                qty_total = parse_int_str(p.get("qty_total", "0"))
-                prod = producido_por_molde_global(molde)
-                shipped = enviados_por_orden(orden)
-                disp = max(0, prod - shipped)
-                frac_prod = (prod / qty_total) if qty_total > 0 else 0.0
-                frac_ship = (shipped / qty_total) if qty_total > 0 else 0.0
-                try:
-                    dleft = (
-                        datetime.strptime(p.get("fin_est_ts", ""), "%Y-%m-%d").date()
-                        - date.today()
-                    ).days
-                    days_left = f"{dleft} días restantes"
-                except Exception:
-                    days_left = ""
-                card["order_title"].configure(
-                    text=f"Orden {orden} — {parte} • Molde {molde}"
-                )
-                self.app._set_pb_if_changed(card["pb_prod"], frac_prod)
-                self.app._set_pb_if_changed(card["pb_ship"], frac_ship)
-                card["lbl_prod"].configure(
-                    text=f"Producidas: {prod}/{qty_total} pzs"
-                )
-                card["lbl_ship"].configure(
-                    text=f"Enviado: {shipped}/{qty_total} pzs  •  Disponible: {disp}"
-                )
-                card["lbl_days"].configure(text=days_left)
-            else:
-                card["order_title"].configure(text="Sin orden asignada")
-                self.app._set_pb_if_changed(card["pb_prod"], 0)
-                self.app._set_pb_if_changed(card["pb_ship"], 0)
-                card["lbl_prod"].configure(text="Producidas: 0/0 pzs")
-                card["lbl_ship"].configure(
-                    text="Enviado: 0/0 pzs  •  Disponible: 0"
-                )
-                card["lbl_days"].configure(text="")
-            card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
-        if total_area > 0 and meta_area > 0:
-            buenas_area = max(0, total_area - scrap_area)
-            P_area = total_area / meta_area
-            Q_area = buenas_area / total_area
-            area_oee = P_area * Q_area * 100.0
-            self.lbl_area.configure(text=f"{area_oee:.2f} %")
-        else:
-            self.lbl_area.configure(text="0.00 %")
+            self._timer = None
+        try:
+            # reloj
+            self.clock_lbl.configure(text=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+            hoy = date.today().isoformat()
 
-        if self._timer: self.after_cancel(self._timer)
-        self._timer = self.after(DASH_REFRESH_MS, self._refresh_now)
+            # por máquina y promedio de área
+            total_area = scrap_area = meta_area = 0
+            plan_rows = leer_csv_dict(PLANNING_CSV)
+            for m in MACHINES:
+                r = resumen_hoy_maquina(m, hoy)
+                total_area += r["total"]
+                scrap_area += r["scrap"]
+                meta_area += r["meta"]
+
+                card = self.cards[m["id"]]
+                card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
+                card["A"].configure(text=f"A {r['A']:.2f}%")
+                card["P"].configure(text=f"P {r['P']:.2f}%")
+                card["Q"].configure(text=f"Q {r['Q']:.2f}%")
+                bg, fg = self._tone(r["oee"])
+                try:
+                    card["wrap"].configure(fg_color=bg)
+                except Exception:
+                    pass
+
+                futuros = [
+                    p
+                    for p in plan_rows
+                    if p.get("maquina_id") == m["id"]
+                    and (p.get("estado", "plan").lower() != "done")
+                ]
+                try:
+                    futuros.sort(key=lambda p: p.get("inicio_ts", ""))
+                except Exception:
+                    pass
+                if futuros:
+                    p = futuros[0]
+                    orden = p.get("orden", "")
+                    parte = p.get("parte", "")
+                    molde = p.get("molde_id", "")
+                    qty_total = parse_int_str(p.get("qty_total", "0"))
+                    prod = producido_por_molde_global(molde)
+                    shipped = enviados_por_orden(orden)
+                    disp = max(0, prod - shipped)
+                    frac_prod = (prod / qty_total) if qty_total > 0 else 0.0
+                    frac_ship = (shipped / qty_total) if qty_total > 0 else 0.0
+                    try:
+                        dleft = (
+                            datetime.strptime(p.get("fin_est_ts", ""), "%Y-%m-%d").date()
+                            - date.today()
+                        ).days
+                        days_left = f"{dleft} días restantes"
+                    except Exception:
+                        days_left = ""
+                    card["order_title"].configure(
+                        text=f"Orden {orden} — {parte} • Molde {molde}"
+                    )
+                    self.app._set_pb_if_changed(card["pb_prod"], frac_prod)
+                    self.app._set_pb_if_changed(card["pb_ship"], frac_ship)
+                    card["lbl_prod"].configure(
+                        text=f"Producidas: {prod}/{qty_total} pzs"
+                    )
+                    card["lbl_ship"].configure(
+                        text=f"Enviado: {shipped}/{qty_total} pzs  •  Disponible: {disp}"
+                    )
+                    card["lbl_days"].configure(text=days_left)
+                else:
+                    card["order_title"].configure(text="Sin orden asignada")
+                    self.app._set_pb_if_changed(card["pb_prod"], 0)
+                    self.app._set_pb_if_changed(card["pb_ship"], 0)
+                    card["lbl_prod"].configure(text="Producidas: 0/0 pzs")
+                    card["lbl_ship"].configure(
+                        text="Enviado: 0/0 pzs  •  Disponible: 0"
+                    )
+                    card["lbl_days"].configure(text="")
+                card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
+
+            if total_area > 0 and meta_area > 0:
+                buenas_area = max(0, total_area - scrap_area)
+                P_area = total_area / meta_area
+                Q_area = buenas_area / total_area
+                area_oee = P_area * Q_area * 100.0
+                self.lbl_area.configure(text=f"{area_oee:.2f} %")
+            else:
+                self.lbl_area.configure(text="0.00 %")
+
+        except Exception:
+            logging.exception("Error al refrescar tablero en vivo")
+        finally:
+            self._timer = self.after(DASH_REFRESH_MS, self._refresh_now)
 
 # ---------- Reportes ----------
 class ReportsView(ctk.CTkFrame):
@@ -1344,6 +1355,11 @@ class App(ctk.CTk):
     def go_dashboard(self):
         self._unbind_shortcuts_oee()
         self._pack_only(self.dashboard_page)
+        try:
+            # refresco inmediato para mostrar datos actuales
+            self.dashboard_page._refresh_now()
+        except Exception:
+            logging.exception("Error al refrescar tablero en vivo")
 
     def go_oee_select_machine(self):
         self._unbind_shortcuts_oee()
