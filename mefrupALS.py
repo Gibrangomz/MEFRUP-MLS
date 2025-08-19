@@ -767,8 +767,13 @@ class LiveDashboard(ctk.CTkFrame):
         # Top: combinado
         self.card_area = ctk.CTkFrame(body, corner_radius=18)
         self.card_area.grid(row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=(0,12))
-        ctk.CTkLabel(self.card_area, text="OEE Área (hoy)", font=ctk.CTkFont("Helvetica", 16, "bold")).pack(anchor="w", padx=12, pady=(10,0))
-        self.lbl_area = ctk.CTkLabel(self.card_area, text="0.00 %", font=ctk.CTkFont("Helvetica", 28, "bold"))
+        self.lbl_area_title = ctk.CTkLabel(
+            self.card_area, text="OEE Área", font=ctk.CTkFont("Helvetica", 16, "bold")
+        )
+        self.lbl_area_title.pack(anchor="w", padx=12, pady=(10,0))
+        self.lbl_area = ctk.CTkLabel(
+            self.card_area, text="0.00 %", font=ctk.CTkFont("Helvetica", 28, "bold")
+        )
         self.lbl_area.pack(anchor="w", padx=12, pady=(4,12))
 
         # Cards por máquina
@@ -826,7 +831,7 @@ class LiveDashboard(ctk.CTkFrame):
 
         self._refresh_now()
 
-    def _refresh_now(self):
+    def _refresh_now(self, fecha=None):
         """Actualiza métricas en vivo y programa la siguiente actualización."""
         if self._timer:
             try:
@@ -837,16 +842,19 @@ class LiveDashboard(ctk.CTkFrame):
         try:
             # reloj
             self.clock_lbl.configure(text=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-            hoy = date.today().isoformat()
+            if fecha is not None:
+                self.current_date = fecha
+            else:
+                self.current_date = getattr(self, "current_date", date.today().isoformat())
+            hoy = self.current_date
+            self.lbl_area_title.configure(text=f"OEE Área ({hoy})")
 
             # por máquina y promedio de área
-            total_area = scrap_area = meta_area = 0
+            suma_oee = 0.0
             plan_rows = leer_csv_dict(PLANNING_CSV)
             for m in MACHINES:
                 r = resumen_hoy_maquina(m, hoy)
-                total_area += r["total"]
-                scrap_area += r["scrap"]
-                meta_area += r["meta"]
+                suma_oee += r["oee"]
 
                 card = self.cards[m["id"]]
                 card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
@@ -911,11 +919,8 @@ class LiveDashboard(ctk.CTkFrame):
                     card["lbl_days"].configure(text="")
                 card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
 
-            if total_area > 0 and meta_area > 0:
-                buenas_area = max(0, total_area - scrap_area)
-                P_area = total_area / meta_area
-                Q_area = buenas_area / total_area
-                area_oee = P_area * Q_area * 100.0
+            if MACHINES:
+                area_oee = suma_oee / len(MACHINES)
                 self.lbl_area.configure(text=f"{area_oee:.2f} %")
             else:
                 self.lbl_area.configure(text="0.00 %")
@@ -1378,7 +1383,7 @@ class App(ctk.CTk):
         self._pack_only(self.dashboard_page)
         try:
             # refresco inmediato para mostrar datos actuales
-            self.dashboard_page._refresh_now()
+            self.dashboard_page._refresh_now(date.today().isoformat())
         except Exception:
             logging.exception("Error al refrescar tablero en vivo")
 
@@ -1699,17 +1704,16 @@ class App(ctk.CTk):
         escribir_daily(DAILY_CSV_GLOBAL, f, a["oee_pct"], a["total"], a["scrap"], a["meta_pzs"])
 
         # combinado área
-        total_area = meta_area = scrap_area = 0
+        total_area = scrap_area = meta_area = 0
+        suma_oee = 0.0
         for m in MACHINES:
             r = resumen_hoy_maquina(m, f)
+            suma_oee += r["oee"]
             total_area += r["total"]
             scrap_area += r["scrap"]
             meta_area += r["meta"]
-        if total_area > 0 and meta_area > 0:
-            buenas_area = max(0, total_area - scrap_area)
-            P_area = total_area / meta_area
-            Q_area = buenas_area / total_area
-            OEE_area = P_area * Q_area * 100.0
+        if MACHINES:
+            OEE_area = suma_oee / len(MACHINES)
         else:
             OEE_area = 0.0
         escribir_daily(DAILY_CSV_INJECTOR, f, OEE_area, total_area, scrap_area, meta_area)
@@ -1717,7 +1721,7 @@ class App(ctk.CTk):
         self._refrescar_dia(); self._refrescar_hist(); self._refrescar_global(); self._update_save_state()
         if getattr(self, 'dashboard_page', None):
             try:
-                self.dashboard_page._refresh_now()
+                self.dashboard_page._refresh_now(f)
             except Exception:
                 logging.exception("Error al actualizar tablero en vivo")
         messagebox.showinfo("Guardado",
