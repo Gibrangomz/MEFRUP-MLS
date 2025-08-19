@@ -261,8 +261,14 @@ def enviados_por_molde(molde_id: str) -> int:
 
 # ===== resumen por máquina (hoy) con fallback robusto =====
 def _safe_float(x, default=0.0):
-    try: return float(str(x).replace(",",".")) if x not in (None,"") else default
-    except: return default
+    """Parsea un valor numérico tolerante removiendo comas y signos %."""
+    try:
+        if x in (None, ""):
+            return default
+        s = str(x).replace(",", ".").replace("%", "").strip()
+        return float(s)
+    except Exception:
+        return default
 
 def resumen_hoy_maquina(machine, fecha_iso):
     asegurar_archivos_maquina(machine)
@@ -899,6 +905,10 @@ class LiveDashboard(ctk.CTkFrame):
                 bg, fg = self._tone(r_hist["oee"])
                 try:
                     card["wrap"].configure(fg_color=bg)
+                    card["oee"].configure(text_color=fg)
+                    card["A"].configure(text_color=fg)
+                    card["P"].configure(text_color=fg)
+                    card["Q"].configure(text_color=fg)
                 except Exception:
                     pass
 
@@ -961,6 +971,13 @@ class LiveDashboard(ctk.CTkFrame):
             if MACHINES:
                 area_oee = suma_oee / len(MACHINES)
                 self.lbl_area.configure(text=f"{area_oee:.2f} %")
+                bg, fg = self._tone(area_oee)
+                try:
+                    self.card_area.configure(fg_color=bg)
+                    self.lbl_area.configure(text_color=fg)
+                    self.lbl_area_title.configure(text_color=fg)
+                except Exception:
+                    pass
             else:
                 self.lbl_area.configure(text="0.00 %")
 
