@@ -1000,13 +1000,14 @@ class ReportsView(ctk.CTkFrame):
     def _add_plot_card(self, title: str, fig, row: int, col: int):
         buf = io.BytesIO()
         if hasattr(fig, "to_image"):
-            buf.write(fig.to_image(format="png", width=720, height=400, scale=2))
+            buf.write(fig.to_image(format="png", width=720, height=400))
         else:
-            fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+            fig.set_size_inches(7.2, 4)
+            fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
             plt.close(fig)
         buf.seek(0)
         image = Image.open(buf)
-        ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(360, 200))
+        ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(720, 400))
         card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
         card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
         self.chart_frame.grid_rowconfigure(row, weight=1)
@@ -1015,7 +1016,7 @@ class ReportsView(ctk.CTkFrame):
         )
         lbl = ctk.CTkLabel(card, image=ctk_img, text="")
         lbl.image = ctk_img
-        lbl.pack(padx=12, pady=(0, 12))
+        lbl.pack(padx=12, pady=(0, 12), expand=True)
         self._plot_imgs.append(ctk_img)
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
@@ -1089,12 +1090,6 @@ class ReportsView(ctk.CTkFrame):
 
         self._add_plot_card("Indicadores", fig_ind, 0, 0)
         self._add_plot_card("Resumen", fig_sum, 0, 1)
-
-        try:
-            fig_ind.show()
-            fig_sum.show()
-        except Exception:
-            pass
 
 # ---------- Menú ----------
 class MainMenu(ctk.CTkFrame):
