@@ -229,9 +229,16 @@ def _track_color(pct: float) -> str:
 
 
 def _prepare_oee_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Asegura columnas numéricas y calcula A/P/Q/OEE faltantes."""
+    """Normaliza porcentajes y completa columnas básicas.
+
+    Acepta `DataFrame` con columnas en horas, piezas y métricas. Si alguna
+    métrica de porcentaje viene de 0‑100 la convierte a rango 0‑1. Columnas
+    faltantes como tiempos de paro o piezas se rellenan con cero para evitar
+    errores en las gráficas.
+    """
+
     df = df.copy()
-    cols = [
+    num_cols = [
         "planned_busy_time_h",
         "nominal_production_time_h",
         "production_time_h",
@@ -246,9 +253,8 @@ def _prepare_oee_df(df: pd.DataFrame) -> pd.DataFrame:
         "quality_rate",
         "oee",
     ]
-    for c in cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+    for c in num_cols:
+        df[c] = pd.to_numeric(df.get(c, 0), errors="coerce").fillna(0.0)
 
     if "good_parts" not in df.columns and {"produced_parts", "scrap_parts"}.issubset(df.columns):
         df["good_parts"] = df["produced_parts"] - df["scrap_parts"]
@@ -270,12 +276,10 @@ def _prepare_oee_df(df: pd.DataFrame) -> pd.DataFrame:
     if "oee" not in df.columns or df["oee"].isna().any():
         df["oee"] = df["availability"] * df["effectivity"] * df["quality_rate"]
 
-    for c in ["availability", "quality_rate"]:
-        df[c] = df[c].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
-    df["effectivity"] = df["effectivity"].replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
-    df["oee"] = (
-        df["availability"] * df["effectivity"] * df["quality_rate"]
-    ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+    for c in ["availability", "effectivity", "quality_rate", "oee"]:
+        df[c] = df[c].replace([np.inf, -np.inf], 0).fillna(0.0)
+        df[c] = np.where(df[c] > 1, df[c] / 100.0, df[c])
+        df[c] = df[c].clip(0, 1)
     return df
 
 

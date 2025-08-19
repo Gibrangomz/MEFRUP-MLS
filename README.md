@@ -21,4 +21,7 @@ La vista de reportes permite exportar los datos a PDF o Excel, incluyendo tiempo
 - `kpi_card(df)`: tarjeta con métricas agregadas y estadísticas.
 - `heatmap_oee(df)`: mapa de calor OEE día vs turno.
 
-Cada una recibe un `DataFrame` filtrado por máquina y rango de fechas y devuelve `plotly.graph_objects.Figure` listo para integrar.
+Las funciones aceptan un `DataFrame` filtrado por máquina y fechas. Las
+columnas de porcentaje pueden venir en escala 0‑1 o 0‑100; el módulo las
+normaliza automáticamente y devuelve `plotly.graph_objects.Figure` listo para
+integrar en otras vistas.
