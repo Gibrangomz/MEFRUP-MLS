@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install customtkinter pillow tkcalendar matplotlib plotly kaleido
+#   pip install customtkinter pillow tkcalendar matplotlib plotly kaleido pandas fpdf openpyxl
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from PIL import Image
 from tkcalendar import Calendar
 import csv, os, logging, traceback, io
 from datetime import datetime, date, timedelta
+import pandas as pd
+from fpdf import FPDF
 
 import matplotlib
 matplotlib.use("Agg")
@@ -293,6 +295,19 @@ def resumen_rango_maquina(machine, desde, hasta):
     """Agrega métricas de producción en un rango de fechas."""
     asegurar_archivos_maquina(machine)
     rows = leer_csv_dict(machine["oee_csv"])
+    down_rows = leer_csv_dict(machine["down_csv"])
+    down_by_date = {}
+    for d in down_rows:
+        f = d.get("fecha")
+        if not f:
+            continue
+        if desde and f < desde:
+            continue
+        if hasta and f > hasta:
+            continue
+        mins = _safe_float(d.get("duracion_seg", "0")) / 60.0
+        down_by_date[f] = down_by_date.get(f, 0.0) + mins
+
     data = []
     for r in rows:
         f = r.get("fecha")
@@ -312,8 +327,10 @@ def resumen_rango_maquina(machine, desde, hasta):
         if total <= 0 or meta <= 0:
             continue
         buenas = max(0, total - scrap)
+        paro = round(down_by_date.get(f, 0.0), 2)
         data.append({
             "fecha": f,
+            "paro_min": paro,
             "total": total,
             "scrap": scrap,
             "buenas": buenas,
@@ -330,7 +347,8 @@ def resumen_rango_maquina(machine, desde, hasta):
             "oee_prom": 0.0,
             "avail_prom": 0.0,
             "perf_prom": 0.0,
-            "qual_prom": 0.0
+            "qual_prom": 0.0,
+            "paro_min_total": 0.0,
         }, []
     total = sum(d["total"] for d in data)
     scrap = sum(d["scrap"] for d in data)
@@ -339,6 +357,7 @@ def resumen_rango_maquina(machine, desde, hasta):
     avail_prom = sum(d["availability"] for d in data) / len(data)
     perf_prom = sum(d["performance"] for d in data) / len(data)
     qual_prom = sum(d["quality"] for d in data) / len(data)
+    total_paro = sum(d["paro_min"] for d in data)
     stats = {
         "total": total,
         "scrap": scrap,
@@ -346,7 +365,8 @@ def resumen_rango_maquina(machine, desde, hasta):
         "oee_prom": round(oee_prom, 2),
         "avail_prom": round(avail_prom, 2),
         "perf_prom": round(perf_prom, 2),
-        "qual_prom": round(qual_prom, 2)
+        "qual_prom": round(qual_prom, 2),
+        "paro_min_total": round(total_paro, 2),
     }
     return stats, data
 
@@ -895,6 +915,8 @@ class ReportsView(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.app = app
         self._plot_imgs = []
+        self._last_data = []
+        self._last_stats = {}
         self._build()
 
     def _build(self):
@@ -980,6 +1002,7 @@ class ReportsView(ctk.CTkFrame):
         self.chart_frame = ctk.CTkFrame(body, corner_radius=20, fg_color=("white", "#1c1c1e"))
         self.chart_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 20))
         self.chart_frame.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkButton(body, text="Exportar", command=self._exportar).grid(row=3, column=0, sticky="e")
 
     def _tone(self, oee: float):
         if oee >= 85:
@@ -1000,10 +1023,10 @@ class ReportsView(ctk.CTkFrame):
     def _add_plot_card(self, title: str, fig, row: int, col: int):
         buf = io.BytesIO()
         if hasattr(fig, "to_image"):
-            buf.write(fig.to_image(format="png", width=720, height=400))
+            buf.write(fig.to_image(format="png", width=720, height=400, scale=2))
         else:
             fig.set_size_inches(7.2, 4)
-            fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+            fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", pad_inches=0.1)
             plt.close(fig)
         buf.seek(0)
         image = Image.open(buf)
@@ -1018,6 +1041,59 @@ class ReportsView(ctk.CTkFrame):
         lbl.image = ctk_img
         lbl.pack(padx=12, pady=(0, 12), expand=True)
         self._plot_imgs.append(ctk_img)
+
+    def _exportar(self):
+        if not self._last_data:
+            messagebox.showwarning("Exportar", "Genera un reporte primero")
+            return
+        if messagebox.askyesno("Exportar", "¿Exportar como PDF? (No = Excel)"):
+            path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF","*.pdf")])
+            if path:
+                self._export_pdf(path)
+        else:
+            path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel","*.xlsx")])
+            if path:
+                self._export_excel(path)
+
+    def _export_excel(self, path: str):
+        df = pd.DataFrame(self._last_data)
+        df.to_excel(path, index=False)
+
+    def _export_pdf(self, path: str):
+        df = pd.DataFrame(self._last_data)
+        pdf = FPDF(orientation="L", unit="mm", format="A4")
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Reporte de Producción", ln=True, align="C")
+        pdf.ln(5)
+        pdf.set_font("Arial", "B", 9)
+        col_w = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
+        for c in df.columns:
+            pdf.cell(col_w, 8, c, border=1)
+        pdf.ln(8)
+        pdf.set_font("Arial", "", 8)
+        for _, row in df.iterrows():
+            for c in df.columns:
+                pdf.cell(col_w, 8, str(row[c]), border=1)
+            pdf.ln(8)
+        pdf.ln(4)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 8, "Resumen", ln=True)
+        pdf.set_font("Arial", "", 8)
+        stats_lines = [
+            ("Total", self._last_stats.get("total", 0)),
+            ("Buenas", self._last_stats.get("buenas", 0)),
+            ("Scrap", self._last_stats.get("scrap", 0)),
+            ("OEE Prom (%)", self._last_stats.get("oee_prom", 0)),
+            ("Availability Prom (%)", self._last_stats.get("avail_prom", 0)),
+            ("Effectivity Prom (%)", self._last_stats.get("perf_prom", 0)),
+            ("Quality Prom (%)", self._last_stats.get("qual_prom", 0)),
+            ("Paro total (min)", self._last_stats.get("paro_min_total", 0)),
+        ]
+        for k, v in stats_lines:
+            pdf.cell(0, 6, f"{k}: {v}", ln=True)
+        pdf.output(path)
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
@@ -1044,6 +1120,8 @@ class ReportsView(ctk.CTkFrame):
         desde=self.desde_entry.get().strip()
         hasta=self.hasta_entry.get().strip()
         stats, data = resumen_rango_maquina(machine, desde, hasta)
+        self._last_stats = stats
+        self._last_data = data
         self.lbl_total.configure(text=str(stats["total"]))
         self.lbl_buenas.configure(text=str(stats["buenas"]))
         self.lbl_scrap.configure(text=str(stats["scrap"]))
@@ -1068,7 +1146,9 @@ class ReportsView(ctk.CTkFrame):
         fig_ind.add_trace(go.Bar(name="Effectivity", x=fechas, y=perf, marker_color="#f59e0b"))
         fig_ind.add_trace(go.Bar(name="Quality rate", x=fechas, y=qual, marker_color="#3b82f6"))
         fig_ind.add_trace(go.Scatter(name="OEE", x=fechas, y=oees, mode="lines+markers", marker=dict(color="#111827")))
-        fig_ind.update_layout(barmode="group", yaxis_title="%", xaxis_tickangle=-45, template="plotly_white")
+        fig_ind.update_layout(barmode="group", yaxis_title="%", xaxis_tickangle=-45,
+                              template="plotly_white", width=720, height=400,
+                              margin=dict(l=60, r=30, t=40, b=120))
 
         fig_sum = go.Figure()
         fig_sum.add_trace(
@@ -1086,7 +1166,8 @@ class ReportsView(ctk.CTkFrame):
                 textposition="inside",
             )
         )
-        fig_sum.update_layout(xaxis=dict(title="%", range=[0, 110]), template="plotly_white")
+        fig_sum.update_layout(xaxis=dict(title="%", range=[0, 110]), template="plotly_white",
+                               width=720, height=400, margin=dict(l=120, r=30, t=40, b=40))
 
         self._add_plot_card("Indicadores", fig_ind, 0, 0)
         self._add_plot_card("Resumen", fig_sum, 0, 1)
