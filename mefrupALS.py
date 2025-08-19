@@ -45,6 +45,9 @@ DAILY_CSV_INJECTOR = os.path.join(BASE_DIR, "oee_inyeccion_daily.csv")
 RECIPES_CSV = os.path.join(BASE_DIR, "recipes.csv")
 LOGO_PATH   = os.path.join(BASE_DIR, "10b41fef-97af-4e79-90c4-b496e0dd3197.png")
 
+CHART_W = 640
+CHART_H = 360
+
 # planificación y milestones
 PLANNING_CSV = os.path.join(BASE_DIR, "planning.csv")   # orden, parte, molde_id, maquina_id, qty_total, inicio_ts, fin_est_ts, setup_min, estado, ciclo_s, cav_on
 DELIV_CSV    = os.path.join(BASE_DIR, "deliveries.csv") # orden, due_date, qty, cumplido(0/1)
@@ -1037,14 +1040,14 @@ class ReportsView(ctk.CTkFrame):
     def _add_plot_card(self, title: str, fig, row: int, col: int):
         buf = io.BytesIO()
         if hasattr(fig, "to_image"):
-            buf.write(fig.to_image(format="png", width=720, height=400, scale=2))
+            buf.write(fig.to_image(format="png", width=CHART_W, height=CHART_H, scale=2))
         else:
-            fig.set_size_inches(7.2, 4)
-            fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", pad_inches=0.1)
+            fig.set_size_inches(CHART_W / 100, CHART_H / 100)
+            fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", pad_inches=0.2)
             plt.close(fig)
         img_bytes = buf.getvalue()
         image = Image.open(io.BytesIO(img_bytes))
-        ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(720, 400))
+        ctk_img = ctk.CTkImage(light_image=image, dark_image=image, size=(CHART_W, CHART_H))
         card = ctk.CTkFrame(self.chart_frame, corner_radius=12, fg_color=("white", "#1c1c1e"))
         card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
         self.chart_frame.grid_rowconfigure(row, weight=1)
@@ -1053,7 +1056,7 @@ class ReportsView(ctk.CTkFrame):
         )
         lbl = ctk.CTkLabel(card, image=ctk_img, text="")
         lbl.image = ctk_img
-        lbl.pack(padx=12, pady=(0, 12), expand=True)
+        lbl.pack(padx=12, pady=(0, 12), expand=True, fill="both")
         self._plot_imgs.append(ctk_img)
         self._plot_bytes.append(img_bytes)
 
@@ -1072,16 +1075,20 @@ class ReportsView(ctk.CTkFrame):
 
     def _export_excel(self, path: str):
         df = pd.DataFrame(self._last_data)
-        df.to_excel(path, index=False)
+        df.to_excel(path, index=False, startrow=4)
         wb = load_workbook(path)
         ws = wb.active
-        start_row = len(df) + 3
+        if os.path.exists(LOGO_PATH):
+            logo = XLImage(LOGO_PATH)
+            logo.width, logo.height = 120, 48
+            ws.add_image(logo, "A1")
+        start_row = len(df) + 7
         for img_bytes in self._plot_bytes:
             stream = io.BytesIO(img_bytes)
             img = XLImage(stream)
-            img.width, img.height = 720, 400
+            img.width, img.height = CHART_W, CHART_H
             ws.add_image(img, f"A{start_row}")
-            start_row += 25
+            start_row += int(CHART_H / 15) + 2
         wb.save(path)
 
     def _export_pdf(self, path: str):
@@ -1089,7 +1096,10 @@ class ReportsView(ctk.CTkFrame):
         pdf = FPDF(orientation="L", unit="mm", format="A4")
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
+        if os.path.exists(LOGO_PATH):
+            pdf.image(LOGO_PATH, x=10, y=8, w=30)
         pdf.set_font("Arial", "B", 14)
+        pdf.set_y(15)
         pdf.cell(0, 10, "Reporte de Producción", ln=True, align="C")
         pdf.ln(5)
         pdf.set_font("Arial", "B", 9)
@@ -1124,7 +1134,7 @@ class ReportsView(ctk.CTkFrame):
                 tmp.write(img_bytes)
                 tmp_path = tmp.name
             img_w = pdf.w - 2 * pdf.l_margin
-            img_h = img_w * 400 / 720
+            img_h = img_w * CHART_H / CHART_W
             pdf.image(tmp_path, w=img_w, h=img_h)
             os.remove(tmp_path)
             pdf.ln(4)
@@ -1182,9 +1192,15 @@ class ReportsView(ctk.CTkFrame):
         fig_ind.add_trace(go.Bar(name="Effectivity", x=fechas, y=perf, marker_color="#f59e0b"))
         fig_ind.add_trace(go.Bar(name="Quality rate", x=fechas, y=qual, marker_color="#3b82f6"))
         fig_ind.add_trace(go.Scatter(name="OEE", x=fechas, y=oees, mode="lines+markers", marker=dict(color="#111827")))
-        fig_ind.update_layout(barmode="group", yaxis_title="%", xaxis_tickangle=-45,
-                              template="plotly_white", width=720, height=400,
-                              margin=dict(l=60, r=30, t=40, b=80))
+        fig_ind.update_layout(
+            barmode="group",
+            yaxis_title="%",
+            xaxis_tickangle=-45,
+            template="plotly_white",
+            width=CHART_W,
+            height=CHART_H,
+            margin=dict(l=60, r=30, t=40, b=80),
+        )
 
         fig_sum = go.Figure()
         fig_sum.add_trace(
@@ -1202,8 +1218,13 @@ class ReportsView(ctk.CTkFrame):
                 textposition="inside",
             )
         )
-        fig_sum.update_layout(xaxis=dict(title="%", range=[0, 110]), template="plotly_white",
-                               width=720, height=400, margin=dict(l=120, r=30, t=40, b=40))
+        fig_sum.update_layout(
+            xaxis=dict(title="%", range=[0, 110]),
+            template="plotly_white",
+            width=CHART_W,
+            height=CHART_H,
+            margin=dict(l=120, r=30, t=40, b=40),
+        )
 
         self._add_plot_card("Indicadores", fig_ind, 0, 0)
         self._add_plot_card("Resumen", fig_sum, 0, 1)
