@@ -1502,6 +1502,11 @@ class App(ctk.CTk):
     def go_inventory(self):
         if not self.inventory_page:
             self.inventory_page = InventoryView(self.container, self)
+        else:
+            try:
+                self.inventory_page._reload_table()
+            except Exception:
+                pass
         self._pack_only(self.inventory_page)
 
     def go_shipments(self, preselect_order: str|None=None):
@@ -2365,7 +2370,9 @@ class InventoryView(ctk.CTkFrame):
             molde = orden_a_molde.get(r.get("orden", ""), "")
             card = ctk.CTkFrame(self.pending_frame, corner_radius=12)
             card.pack(fill="x", pady=4)
-            txt = f"Salida: {r.get('qty')} pzs • Molde {molde}"
+
+            txt = f"Orden {r.get('orden', '')} • Molde {molde} • Salida {r.get('qty')} pzs"
+
             ctk.CTkLabel(card, text=txt).pack(side="left", padx=8, pady=8)
             ctk.CTkButton(card, text="Aprobar", width=80,
                           command=lambda row=r: self._approve_shipment(row)).pack(side="right", padx=8, pady=8)
