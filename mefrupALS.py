@@ -854,7 +854,10 @@ class LiveDashboard(ctk.CTkFrame):
             self.cards[m["id"]]["pb_ship"].pack(fill="x", padx=8)
             r2 = ctk.CTkFrame(order_card, fg_color="transparent")
             r2.pack(fill="x", padx=8, pady=(2,8))
-            self.cards[m["id"]]["lbl_ship"] = ctk.CTkLabel(r2, text="Enviado: 0/0 pzs  •  Disponible: 0")
+            self.cards[m["id"]]["lbl_ship"] = ctk.CTkLabel(
+                r2,
+                text="Enviado ord: 0/0 pzs  •  Enviado mol: 0 pzs  •  Disponible: 0",
+            )
             self.cards[m["id"]]["lbl_ship"].pack(anchor="w")
 
             self.cards[m["id"]]["paro"] = ctk.CTkLabel(card, text="Último paro: -", wraplength=520, justify="left")
@@ -938,7 +941,10 @@ class LiveDashboard(ctk.CTkFrame):
                         text=f"Producidas: {prod}/{qty_total} pzs"
                     )
                     card["lbl_ship"].configure(
-                        text=f"Enviado: {shipped_order}/{qty_total} pzs  •  Disponible: {disp}"
+                        text=(
+                            f"Enviado ord: {shipped_order}/{qty_total} pzs  •  "
+                            f"Enviado mol: {shipped_total} pzs  •  Disponible: {disp}"
+                        )
                     )
                     card["lbl_days"].configure(text=days_left)
                 else:
@@ -947,7 +953,7 @@ class LiveDashboard(ctk.CTkFrame):
                     self.app._set_pb_if_changed(card["pb_ship"], 0)
                     card["lbl_prod"].configure(text="Producidas: 0/0 pzs")
                     card["lbl_ship"].configure(
-                        text="Enviado: 0/0 pzs  •  Disponible: 0"
+                        text="Enviado ord: 0/0 pzs  •  Enviado mol: 0 pzs  •  Disponible: 0"
                     )
                     card["lbl_days"].configure(text="")
                 card["paro"].configure(text=f"Último paro: {r_day['ultimo_paro']}")
@@ -2208,7 +2214,13 @@ class OrdersBoardView(ctk.CTkFrame):
             ctk.CTkLabel(card, text="Progreso de salidas / embarques").pack(anchor="w", padx=12)
             bars=ctk.CTkProgressBar(card); bars.set(frac_ship); bars.pack(fill="x", padx=12)
             row2=ctk.CTkFrame(card, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(4,10))
-            ctk.CTkLabel(row2, text=f"Enviado: {shipped_order}/{qty_total} pzs  •  Disponible: {disp}").pack(side="left")
+            ctk.CTkLabel(
+                row2,
+                text=(
+                    f"Enviado ord: {shipped_order}/{qty_total} pzs  •  "
+                    f"Enviado mol: {shipped_total} pzs  •  Disponible: {disp}"
+                ),
+            ).pack(side="left")
             ctk.CTkButton(row2, text="Registrar salida", command=lambda o=orden: self.app.go_shipments(o)).pack(side="right", padx=(6,0))
             ctk.CTkButton(row2, text="Ver planificación", fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
                           command=self.app.go_planning).pack(side="right")
@@ -2327,7 +2339,13 @@ class ShipmentsView(ctk.CTkFrame):
         shipped_order = enviados_por_orden(o)
         shipped_total = enviados_por_molde(molde)
         disp = max(0, prod - shipped_total)
-        self.stats.configure(text=f"Orden {o} • Molde {molde} • Qty total {qty_total} • Producidas {prod} • Enviadas {shipped_order} • Disponibles {disp}")
+        self.stats.configure(
+            text=(
+                f"Orden {o} • Molde {molde} • Qty total {qty_total} • Producidas {prod}"
+                f" • Enviadas orden {shipped_order} • Enviadas molde {shipped_total}"
+                f" • Disponibles {disp}"
+            )
+        )
 
     def _reload_table(self):
         for i in self.tree.get_children(): self.tree.delete(i)
