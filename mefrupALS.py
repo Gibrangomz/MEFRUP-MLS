@@ -195,6 +195,25 @@ def promedio_oee_daily(path_daily):
     return round(sum(vals)/len(vals),2) if vals else 0.0
 
 
+def resumen_historico_maquina(machine):
+    """Promedios históricos de OEE y sus componentes para una máquina."""
+    asegurar_archivos_maquina(machine)
+    rows = leer_csv_dict(machine["oee_csv"])
+    if not rows:
+        return dict(oee=0.0, A=0.0, P=0.0, Q=0.0)
+
+    def _avg(key):
+        vals = [_safe_float(r.get(key, 0)) for r in rows if r.get(key) not in (None, "")]
+        return sum(vals) / len(vals) if vals else 0.0
+
+    return dict(
+        oee=round(_avg("oee_%"), 2),
+        A=round(_avg("availability_%"), 2),
+        P=round(_avg("performance_%"), 2),
+        Q=round(_avg("quality_%"), 2),
+    )
+
+
 def dia_semana_es(f):
     try: y,m,d=map(int,f.split("-")); return DIAS_ES[date(y,m,d).weekday()]
     except: return "Día"
@@ -242,8 +261,14 @@ def enviados_por_molde(molde_id: str) -> int:
 
 # ===== resumen por máquina (hoy) con fallback robusto =====
 def _safe_float(x, default=0.0):
-    try: return float(str(x).replace(",",".")) if x not in (None,"") else default
-    except: return default
+    """Parsea un valor numérico tolerante removiendo comas y signos %."""
+    try:
+        if x in (None, ""):
+            return default
+        s = str(x).replace(",", ".").replace("%", "").strip()
+        return float(s)
+    except Exception:
+        return default
 
 def resumen_hoy_maquina(machine, fecha_iso):
     asegurar_archivos_maquina(machine)
@@ -859,23 +884,28 @@ class LiveDashboard(ctk.CTkFrame):
             else:
                 self.current_date = getattr(self, "current_date", date.today().isoformat())
             hoy = self.current_date
-            self.lbl_area_title.configure(text=f"OEE Área ({hoy})")
+            self.lbl_area_title.configure(text="OEE Área (Histórico)")
 
             # por máquina y promedio de área
             suma_oee = 0.0
             plan_rows = leer_csv_dict(PLANNING_CSV)
             for m in MACHINES:
-                r = resumen_hoy_maquina(m, hoy)
-                suma_oee += r["oee"]
+                r_hist = resumen_historico_maquina(m)
+                r_day = resumen_hoy_maquina(m, hoy)
+                suma_oee += r_hist["oee"]
 
                 card = self.cards[m["id"]]
-                card["oee"].configure(text=f"OEE {r['oee']:.2f}%")
-                card["A"].configure(text=f"A {r['A']:.2f}%")
-                card["P"].configure(text=f"P {r['P']:.2f}%")
-                card["Q"].configure(text=f"Q {r['Q']:.2f}%")
-                bg, fg = self._tone(r["oee"])
+                card["oee"].configure(text=f"OEE {r_hist['oee']:.2f}%")
+                card["A"].configure(text=f"A {r_hist['A']:.2f}%")
+                card["P"].configure(text=f"P {r_hist['P']:.2f}%")
+                card["Q"].configure(text=f"Q {r_hist['Q']:.2f}%")
+                bg, fg = self._tone(r_hist["oee"])
                 try:
                     card["wrap"].configure(fg_color=bg)
+                    card["oee"].configure(text_color=fg)
+                    card["A"].configure(text_color=fg)
+                    card["P"].configure(text_color=fg)
+                    card["Q"].configure(text_color=fg)
                 except Exception:
                     pass
 
@@ -930,11 +960,18 @@ class LiveDashboard(ctk.CTkFrame):
                         text="Enviado: 0/0 pzs  •  Disponible: 0"
                     )
                     card["lbl_days"].configure(text="")
-                card["paro"].configure(text=f"Último paro: {r['ultimo_paro']}")
+                card["paro"].configure(text=f"Último paro: {r_day['ultimo_paro']}")
 
             if MACHINES:
                 area_oee = suma_oee / len(MACHINES)
                 self.lbl_area.configure(text=f"{area_oee:.2f} %")
+                bg, fg = self._tone(area_oee)
+                try:
+                    self.card_area.configure(fg_color=bg)
+                    self.lbl_area.configure(text_color=fg)
+                    self.lbl_area_title.configure(text_color=fg)
+                except Exception:
+                    pass
             else:
                 self.lbl_area.configure(text="0.00 %")
 
