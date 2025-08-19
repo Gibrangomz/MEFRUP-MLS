@@ -1324,6 +1324,7 @@ class MainMenu(ctk.CTkFrame):
             {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
             {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
             {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
+            {"text": "Inventario", "command": app.go_inventory, "height": 44},
             {"text": "Salida de Piezas (Embarques)", "command": app.go_shipments, "height": 44},
         ]
 
@@ -1389,6 +1390,7 @@ class App(ctk.CTk):
         self.planning_page = None
         self.orders_board_page = None
         self.reports_page = None
+        self.inventory_page = None
         self.shipments_page = None
         self._shipments_preselect_order = None
 
@@ -1481,6 +1483,11 @@ class App(ctk.CTk):
         if not self.reports_page:
             self.reports_page = ReportsView(self.container, self)
         self._pack_only(self.reports_page)
+
+    def go_inventory(self):
+        if not self.inventory_page:
+            self.inventory_page = InventoryView(self.container, self)
+        self._pack_only(self.inventory_page)
 
     def go_shipments(self, preselect_order: str|None=None):
         self._shipments_preselect_order = preselect_order
@@ -2244,6 +2251,73 @@ class OrdersBoardView(ctk.CTkFrame):
 
         if self._timer: self.after_cancel(self._timer)
         self._timer = self.after(6000, self._refresh_cards)
+
+# ================================
+# === Inventario de Piezas
+# ================================
+class InventoryView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self._build()
+
+    def _build(self):
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#111111"))
+        header.pack(fill="x", side="top")
+        left = ctk.CTkFrame(header, fg_color="transparent"); left.pack(side="left", padx=16, pady=10)
+        ctk.CTkButton(left, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
+                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(0,10))
+        ctk.CTkLabel(left, text="Inventario", font=ctk.CTkFont("Helvetica", 20, "bold")).pack(side="left")
+        right = ctk.CTkFrame(header, fg_color="transparent"); right.pack(side="right", padx=16, pady=10)
+        ctk.CTkButton(right, text="↻ Actualizar", command=self._reload_table).pack(side="right")
+
+        body = ctk.CTkFrame(self, corner_radius=18)
+        body.pack(fill="both", expand=True, padx=16, pady=16)
+        ctk.CTkLabel(body, text="Inventario por Orden", font=ctk.CTkFont("Helvetica", 14, "bold"))\
+            .pack(anchor="w", padx=12, pady=(10,6))
+        ctk.CTkFrame(body, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
+        cols=("orden","parte","molde","producidas","env_ord","env_molde","disp")
+        self.tree=ttk.Treeview(body, columns=cols, show="headings", height=12)
+        headers=[
+            ("orden","Orden",90),
+            ("parte","Parte",150),
+            ("molde","Molde",80),
+            ("producidas","Producidas",110),
+            ("env_ord","Env. ord",90),
+            ("env_molde","Env. molde",110),
+            ("disp","Disp.",90)
+        ]
+        for k,t,w in headers:
+            self.tree.heading(k, text=t); self.tree.column(k, width=w, anchor="center")
+        self.tree.pack(fill="both", expand=True, padx=12, pady=(0,12))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(fill="x", padx=16, pady=(0,16))
+        ctk.CTkButton(btns, text="Registrar salida", command=self._open_shipments).pack(side="left")
+        ctk.CTkButton(btns, text="↻ Actualizar", command=self._reload_table).pack(side="right")
+
+        self._reload_table()
+
+    def _open_shipments(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Orden", "Selecciona una orden.")
+            return
+        order = self.tree.item(sel[0], "values")[0]
+        self.app.go_shipments(order)
+
+    def _reload_table(self):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        for r in leer_csv_dict(PLANNING_CSV):
+            orden = r.get("orden", "")
+            parte = r.get("parte", "")
+            molde = r.get("molde_id", "")
+            prod = producido_por_molde_global(molde)
+            shipped_ord = enviados_por_orden(orden)
+            shipped_total = enviados_por_molde(molde)
+            disp = max(0, prod - shipped_total)
+            self.tree.insert("", "end", values=(orden, parte, molde, prod, shipped_ord, shipped_total, disp))
 
 # ================================
 # === Salida de Piezas (Embarques)
