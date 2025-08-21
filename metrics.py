@@ -443,3 +443,116 @@ def resumen_rango_maquina(machine, desde, hasta):
             "oee": round(oee, 2),
         },
     }
+# ===== FIFO de inventario por molde / orden =====
+
+# campos compatibles para objetivo y fechas
+_OBJ_KEYS = ("qty_total", "objetivo", "objetivo_pzs", "qty", "qty_plan", "cantidad", "target", "qty_objetivo")
+_START_KEYS = ("inicio_ts", "inicio", "start", "fecha_inicio", "start_date")
+
+def _obj_de_orden(row: dict) -> int:
+    for k in _OBJ_KEYS:
+        v = row.get(k)
+        if v not in (None, ""):
+            try:
+                return int(float(v))
+            except Exception:
+                pass
+    return 0
+
+def _inicio_de_orden(row: dict) -> str:
+    for k in _START_KEYS:
+        v = (row.get(k) or "").strip()
+        if v:
+            return v
+    return ""  # sin fecha: queda al final si hay empate por orden
+
+def compute_fifo_assignments(orders=None):
+    """
+    Calcula asignación FIFO del stock neto (por molde) a sus órdenes.
+    Devuelve un dict con:
+      - assigned_by_order[orden] -> piezas asignadas a esa orden (reservadas)
+      - remaining_by_mold[molde] -> piezas netas del molde que quedaron sin asignar
+      - bruto_by_mold[molde], shipped_by_mold[molde]
+      - order_to_mold[orden] -> molde
+    Reglas:
+      stock_neto_molde = producido_por_molde_global - enviados_por_molde (solo approved)
+      necesidad_orden = max(0, objetivo - enviados_por_orden)
+      FIFO: se ordena por fecha de inicio y luego por número de orden.
+    """
+    if orders is None:
+        orders = leer_csv_dict(PLANNING_CSV)
+
+    order_to_mold = {(r.get("orden","") or "").strip(): (r.get("molde_id","") or "").strip() for r in orders}
+    molds = sorted({m for m in order_to_mold.values() if m})
+
+    bruto_by_mold   = {m: int(producido_por_molde_global(m) or 0) for m in molds}
+    shipped_by_mold = {m: enviados_por_molde(m) for m in molds}
+    net_by_mold     = {m: max(0, bruto_by_mold[m] - shipped_by_mold[m]) for m in molds}
+
+    # agrupar órdenes por molde
+    grp = {m: [] for m in molds}
+    for r in orders:
+        o = (r.get("orden","") or "").strip()
+        m = (r.get("molde_id","") or "").strip()
+        if not (o and m):
+            continue
+        grp.setdefault(m, []).append((_inicio_de_orden(r), o, r))
+
+    assigned_by_order = {}
+    remaining_by_mold = {}
+    for m, lst in grp.items():
+        lst.sort(key=lambda t: (t[0], t[1]))  # FIFO
+        rem = net_by_mold.get(m, 0)
+        for _, o, row in lst:
+            objetivo = _obj_de_orden(row)
+            enviado  = enviados_por_orden(o)  # solo approved
+            necesidad = max(0, objetivo - enviado)
+            asignado = max(0, min(necesidad, rem))
+            assigned_by_order[o] = asignado
+            rem -= asignado
+            if rem <= 0:
+                rem = 0
+        remaining_by_mold[m] = rem
+
+    return dict(
+        assigned_by_order=assigned_by_order,
+        remaining_by_mold=remaining_by_mold,
+        bruto_by_mold=bruto_by_mold,
+        shipped_by_mold=shipped_by_mold,
+        order_to_mold=order_to_mold,
+    )
+
+def order_metrics(row: dict, fifo=None):
+    """
+    Métricas listas para UI por orden:
+      objetivo, enviado, asignado, progreso(=enviado+asignado limitado a objetivo), pendiente.
+    """
+    if fifo is None:
+        fifo = compute_fifo_assignments()
+    orden = (row.get("orden","") or "").strip()
+    objetivo = _obj_de_orden(row)
+    enviado  = enviados_por_orden(orden)
+    asignado = int(fifo.get("assigned_by_order", {}).get(orden, 0))
+    progreso = min(objetivo, enviado + asignado)
+    pendiente = max(0, objetivo - progreso)
+    return dict(objetivo=objetivo, enviado=enviado, asignado=asignado,
+                progreso=progreso, pendiente=pendiente)
+
+def mold_metrics(molde_id: str, fifo=None):
+    """bruto, enviado, neto, sobrante_sin_asignar"""
+    if fifo is None:
+        fifo = compute_fifo_assignments()
+    m = str(molde_id).strip()
+    bruto   = int(fifo["bruto_by_mold"].get(m, 0))
+    enviado = int(fifo["shipped_by_mold"].get(m, 0))
+    neto    = max(0, bruto - enviado)
+    sobrante = int(fifo["remaining_by_mold"].get(m, neto))
+    return dict(bruto=bruto, enviado=enviado, neto=neto, sobrante=sobrante)
+
+def totals_from_fifo(fifo):
+    bruto_global = sum(fifo["bruto_by_mold"].values())
+    enviado_global = sum(fifo["shipped_by_mold"].values())
+    neto_global = max(0, bruto_global - enviado_global)
+    sobrante_global = sum(fifo["remaining_by_mold"].values())
+    return dict(bruto=bruto_global, enviado=enviado_global,
+                neto=neto_global, sobrante=sobrante_global)
