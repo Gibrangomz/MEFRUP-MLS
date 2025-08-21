@@ -13,7 +13,8 @@ from config import *
 from csv_utils import *
 from metrics import *
 
-from views.recipes import RecipesView
+from views.moldes_partes import MoldesPartesView
+from views.recetas import RecetasView
 from views.machine_chooser import MachineChooser
 from views.oee_view import OEEView
 from views.live_dashboard import LiveDashboard
@@ -95,7 +96,8 @@ class App(ctk.CTk):
 
         self.container=ctk.CTkFrame(self, corner_radius=0, fg_color="transparent"); self.container.pack(fill="both", expand=True)
         self.menu_page=MainMenu(self.container, self)
-        self.recipes_page=RecipesView(self.container, self)
+        self.moldes_partes_page=MoldesPartesView(self.container, self)
+        self.recetas_page=RecetasView(self.container, self)
         self.choose_page=MachineChooser(self.container, self)
         self.dashboard_page=LiveDashboard(self.container, self)
         self.reports_page=ReportsView(self.container, self)
@@ -155,9 +157,13 @@ class App(ctk.CTk):
         self._update_now(); self._refrescar_dia(); self._refrescar_hist(); self._refrescar_global()
         self._update_save_state(); self._refresh_paro_labels(); self._reload_downtime_table()
 
-    def go_recipes(self):
+    def go_moldes_partes(self):
         self._unbind_shortcuts_oee()
-        self._pack_only(self.recipes_page)
+        self._pack_only(self.moldes_partes_page)
+
+    def go_recetas(self):
+        self._unbind_shortcuts_oee()
+        self._pack_only(self.recetas_page)
 
     def go_planning(self):
         if not self.planning_page:
