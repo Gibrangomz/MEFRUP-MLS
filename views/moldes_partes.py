@@ -3,9 +3,9 @@ import csv
 from statistics import mean
 
 
-class RecipesView(ctk.CTkFrame):
+class MoldesPartesView(ctk.CTkFrame):
     """
-    Gestor PRO de Recetas (Molde/Parte/Ciclo)
+    Gestor PRO de Moldes/Partes/Ciclos
     - UI tipo dashboard: header con subtítulo, toolbar compacta, KPIs en cards
     - Filtro con CTkSegmentedButton (Todas / Activas / Inactivas) + búsqueda en vivo
     - Tabla con zebra, ordenación con flechas, fila inactiva atenuada
@@ -40,7 +40,7 @@ class RecipesView(ctk.CTkFrame):
         ).pack(side="left", padx=(0, 10))
         title_box = ctk.CTkFrame(left, fg_color="transparent")
         title_box.pack(side="left")
-        ctk.CTkLabel(title_box, text="Recetas", font=ctk.CTkFont("Helvetica", 22, "bold")).pack(anchor="w")
+        ctk.CTkLabel(title_box, text="Molde/Partes", font=ctk.CTkFont("Helvetica", 22, "bold")).pack(anchor="w")
         ctk.CTkLabel(
             title_box, text="Catálogo de moldes/partes/ciclos para referencia de OEE y planeación",
             text_color=("#6b7280", "#9CA3AF"), font=ctk.CTkFont(size=12)
@@ -91,12 +91,12 @@ class RecipesView(ctk.CTkFrame):
             setattr(self, name_attr, lbl)
 
         if ctk.get_appearance_mode() == "Dark":
-            card(kpis, "Total recetas", "#111827", "kpi_total_lbl")
+            card(kpis, "Total moldes", "#111827", "kpi_total_lbl")
             card(kpis, "Activas", "#064e3b", "kpi_act_lbl")
             card(kpis, "Ciclo prom (s)", "#1f2937", "kpi_ciclo_lbl")
             card(kpis, "Scrap prom (%)", "#1f2937", "kpi_scrap_lbl")
         else:
-            card(kpis, "Total recetas", "#F3F4F6", "kpi_total_lbl")
+            card(kpis, "Total moldes", "#F3F4F6", "kpi_total_lbl")
             card(kpis, "Activas", "#DCFCE7", "kpi_act_lbl")
             card(kpis, "Ciclo prom (s)", "#F3F4F6", "kpi_ciclo_lbl")
             card(kpis, "Scrap prom (%)", "#FEF9C3", "kpi_scrap_lbl")
@@ -134,11 +134,11 @@ class RecipesView(ctk.CTkFrame):
 
         # Estilo tabla
         style = ttk.Style(self)
-        style.configure("Recipes.Treeview", rowheight=26, font=("Helvetica", 10))
-        style.configure("Recipes.Treeview.Heading", font=("Helvetica", 10, "bold"))
+        style.configure("MoldesPartes.Treeview", rowheight=26, font=("Helvetica", 10))
+        style.configure("MoldesPartes.Treeview.Heading", font=("Helvetica", 10, "bold"))
         # Mejor foco selección
-        style.map("Recipes.Treeview", background=[("selected", "#2563eb")], foreground=[("selected", "white")])
-        self.tree.configure(style="Recipes.Treeview")
+        style.map("MoldesPartes.Treeview", background=[("selected", "#2563eb")], foreground=[("selected", "white")])
+        self.tree.configure(style="MoldesPartes.Treeview")
 
         headers = [
             ("molde_id", "Molde", 130),
@@ -170,7 +170,7 @@ class RecipesView(ctk.CTkFrame):
         form = ctk.CTkFrame(body, corner_radius=18)
         form.pack(side="left", fill="y", padx=(10, 0))
 
-        ctk.CTkLabel(form, text="Editar receta", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(12, 0))
+        ctk.CTkLabel(form, text="Editar molde/parte", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(12, 0))
         ctk.CTkFrame(form, height=1, fg_color=("#E5E7EB", "#2B2B2B")).pack(fill="x", padx=12, pady=(6, 8))
 
         def frow(lbl, var, width=190, typ="entry", ph=""):
@@ -255,7 +255,7 @@ class RecipesView(ctk.CTkFrame):
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=self.FIELDS)
             w.writeheader(); w.writerows(self._all_rows)
-        messagebox.showinfo("Exportar", "Se exportaron las recetas.")
+        messagebox.showinfo("Exportar", "Se exportaron los moldes/partes.")
 
     def _import_csv(self):
         path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
@@ -267,12 +267,12 @@ class RecipesView(ctk.CTkFrame):
                     rows.append({k: (r.get(k, "") or "").strip() for k in self.FIELDS})
             if not rows:
                 messagebox.showwarning("Importar", "El archivo está vacío."); return
-            if not messagebox.askyesno("Importar", "¿Reemplazar todas las recetas por el archivo seleccionado?"):
+            if not messagebox.askyesno("Importar", "¿Reemplazar todos los moldes/partes por el archivo seleccionado?"):
                 return
             self._all_rows = rows
             self._save_to_disk()
             self._refresh_table()
-            messagebox.showinfo("Importar", "Recetas importadas.")
+            messagebox.showinfo("Importar", "Moldes/partes importados.")
         except Exception as e:
             messagebox.showerror("Importar", f"No se pudo importar:\n{e}")
 
@@ -325,7 +325,7 @@ class RecipesView(ctk.CTkFrame):
             )
             self.tree.insert("", "end", values=vals, tags=tags)
 
-        self.lbl_tot.configure(text=f"Recetas: {total}  •  Activas: {act}  •  Inactivas: {total - act}")
+        self.lbl_tot.configure(text=f"Moldes: {total}  •  Activos: {act}  •  Inactivos: {total - act}")
         self._refresh_headers()
 
     def _render_kpis(self):
@@ -385,7 +385,7 @@ class RecipesView(ctk.CTkFrame):
     def _duplicate(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("Duplicar", "Selecciona una receta para duplicar."); return
+            messagebox.showinfo("Duplicar", "Selecciona un molde/parte para duplicar."); return
         vals = self.tree.item(sel[0], "values")
         self.var_molde.set((vals[0] or "") + "-copy")
         self.var_parte.set(vals[1]); self.var_ciclo.set(vals[2])
@@ -407,7 +407,7 @@ class RecipesView(ctk.CTkFrame):
         if not m:
             errs.append("Molde ID es obligatorio.")
         elif exists and not editing_same:
-            errs.append(f"Ya existe una receta con Molde ID '{m}'.")
+            errs.append(f"Ya existe un molde/parte con Molde ID '{m}'.")
 
         def num(name, val, minv=None, maxv=None, as_int=False):
             s = (val or "").strip()
@@ -453,7 +453,7 @@ class RecipesView(ctk.CTkFrame):
         else:
             self._upsert_by_id(row)
         self._save_to_disk(); self._refresh_table()
-        messagebox.showinfo("Recetas", "Receta guardada.")
+        messagebox.showinfo("Molde/Parte", "Registro guardado.")
 
     def _upsert_by_id(self, row: dict):
         for r in self._all_rows:
@@ -464,9 +464,9 @@ class RecipesView(ctk.CTkFrame):
     def _delete(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("Eliminar", "Selecciona una receta."); return
+            messagebox.showinfo("Eliminar", "Selecciona un molde/parte."); return
         molde = self.tree.item(sel[0], "values")[0]
-        if not messagebox.askyesno("Eliminar", f"¿Eliminar la receta del molde {molde}?"):
+        if not messagebox.askyesno("Eliminar", f"¿Eliminar el registro del molde {molde}?"):
             return
         self._all_rows = [r for r in self._all_rows if r.get("molde_id", "") != molde]
         self._save_to_disk(); self._refresh_table()

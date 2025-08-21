@@ -28,8 +28,9 @@ class MainMenu(ctk.CTkFrame):
         btns = [
             {"text": "Tablero en vivo (Área Inyección)", "command": app.go_dashboard, "height": 48},
             {"text": "OEE y Registro de Producción", "command": app.go_oee_select_machine, "height": 48},
-            {"text": "Recetas (Moldes/Partes)", "command": app.go_recipes, "height": 44,
+            {"text": "Molde/Partes", "command": app.go_moldes_partes, "height": 44,
              "fg_color": "#E5E7EB", "text_color": "#111", "hover_color": "#D1D5DB"},
+            {"text": "Recetas", "command": app.go_recetas, "height": 44},
             {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
             {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
             {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
