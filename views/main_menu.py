@@ -30,6 +30,8 @@ class MainMenu(ctk.CTkFrame):
             {"text": "OEE y Registro de Producción", "command": app.go_oee_select_machine, "height": 48},
             {"text": "Recetas (Moldes/Partes)", "command": app.go_recipes, "height": 44,
              "fg_color": "#E5E7EB", "text_color": "#111", "hover_color": "#D1D5DB"},
+            {"text": "Recetas por Máquina", "command": app.go_machine_recipes, "height": 44,
+             "fg_color": "#E5E7EB", "text_color": "#111", "hover_color": "#D1D5DB"},
             {"text": "Planificación + Milestones", "command": app.go_planning, "height": 44},
             {"text": "Tablero de Órdenes (Progreso)", "command": app.go_orders_board, "height": 44},
             {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},

@@ -14,6 +14,7 @@ from csv_utils import *
 from metrics import *
 
 from views.recipes import RecipesView
+from views.machine_recipes import MachineRecipesView
 from views.machine_chooser import MachineChooser
 from views.oee_view import OEEView
 from views.live_dashboard import LiveDashboard
@@ -96,6 +97,7 @@ class App(ctk.CTk):
         self.container=ctk.CTkFrame(self, corner_radius=0, fg_color="transparent"); self.container.pack(fill="both", expand=True)
         self.menu_page=MainMenu(self.container, self)
         self.recipes_page=RecipesView(self.container, self)
+        self.machine_recipes_page=MachineRecipesView(self.container, self)
         self.choose_page=MachineChooser(self.container, self)
         self.dashboard_page=LiveDashboard(self.container, self)
         self.reports_page=ReportsView(self.container, self)
@@ -158,6 +160,10 @@ class App(ctk.CTk):
     def go_recipes(self):
         self._unbind_shortcuts_oee()
         self._pack_only(self.recipes_page)
+
+    def go_machine_recipes(self):
+        self._unbind_shortcuts_oee()
+        self._pack_only(self.machine_recipes_page)
 
     def go_planning(self):
         if not self.planning_page:
