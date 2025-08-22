@@ -744,26 +744,29 @@ class MachineRecipesView(ctk.CTkFrame):
                 # Estilos
                 thin = Side(style="thin", color="000000")
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                head_fill = PatternFill("solid", start_color="F3F4F6", end_color="F3F4F6")
+                head_fill = PatternFill("solid", start_color="DBEAFE", end_color="DBEAFE")
 
                 head = NamedStyle(name="head")
                 head.font = Font(bold=True)
                 head.alignment = Alignment(horizontal="left", vertical="center")
                 head.border = border; head.fill = head_fill
-                if "head" not in wb.named_styles: wb.add_named_style(head)
+                if "head" not in wb.named_styles:
+                    wb.add_named_style(head)
 
                 val = NamedStyle(name="val")
                 val.font = Font(bold=False)
                 val.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 val.border = border
-                if "val" not in wb.named_styles: wb.add_named_style(val)
+                if "val" not in wb.named_styles:
+                    wb.add_named_style(val)
 
                 title = NamedStyle(name="title")
                 title.font = Font(bold=True, size=16, color="FFFFFF")
                 title.alignment = Alignment(horizontal="center", vertical="center")
                 title.border = border
                 title.fill = PatternFill("solid", start_color="1D4ED8", end_color="1D4ED8")
-                if "title" not in wb.named_styles: wb.add_named_style(title)
+                if "title" not in wb.named_styles:
+                    wb.add_named_style(title)
 
                 # Anchos A..N
                 widths = [16,18,18,14,14,14,14,16,16,16,16,16,16,18]
@@ -779,30 +782,36 @@ class MachineRecipesView(ctk.CTkFrame):
                         pass
 
                 def put(r, c, text, style="val"):
-                    x = ws.cell(row=r, column=c, value=_safe_excel(text))
-                    x.style = style
-                    return x
+                    cell = ws.cell(row=r, column=c, value=_safe_excel(text))
+                    cell.style = style
+                    return cell
+
+                def mput(r1, c1, r2, c2, text="", style="val"):
+                    ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+                    for rr in range(r1, r2 + 1):
+                        for cc in range(c1, c2 + 1):
+                            ws.cell(row=rr, column=cc).style = style
+                    ws.cell(row=r1, column=c1, value=_safe_excel(text))
 
                 # Título + Cabecera
                 ws.row_dimensions[1].height = 28
-                ws.merge_cells("A1:N1"); put(1,1,"Parameter overview","title")
-                ws.merge_cells("B2:E2"); put(2,1,"Program","head");        put(2,2, snap.get("program",""))
-                ws.merge_cells("G2:N2"); put(2,6,"Date of entry:","head"); put(2,7, snap.get("date_of_entry",""))
-                ws.merge_cells("B3:E3"); put(3,1,"Mould desig.","head");   put(3,2, snap.get("mould_desig",""))
-                ws.merge_cells("G3:N3"); put(3,6,"Cavities","head");       put(3,7, snap.get("cavities",""))
-                ws.merge_cells("B4:E4"); put(4,1,"Material","head");       put(4,2, snap.get("material",""))
-                ws.merge_cells("G4:N4"); put(4,6,"Machine","head");        put(4,7, snap.get("machine",""))
-                ws.merge_cells("A5:N5"); put(5,1,"")
+                mput(1, 1, 1, 14, "Parameter overview", "title")
+                put(2, 1, "Program", "head");        mput(2, 2, 2, 5,  snap.get("program", ""))
+                put(2, 6, "Date of entry:", "head"); mput(2, 7, 2, 14, snap.get("date_of_entry", ""))
+                put(3, 1, "Mould desig.", "head");   mput(3, 2, 3, 5,  snap.get("mould_desig", ""))
+                put(3, 6, "Cavities", "head");       mput(3, 7, 3, 14, snap.get("cavities", ""))
+                put(4, 1, "Material", "head");       mput(4, 2, 4, 5,  snap.get("material", ""))
+                put(4, 6, "Machine", "head");        mput(4, 7, 4, 14, snap.get("machine", ""))
+                mput(5, 1, 5, 14, "")
 
                 # Injection unit
-                ws.merge_cells("A6:N6"); put(6,1,"Injection unit","head")
+                mput(6, 1, 6, 14, "Injection unit", "head")
                 put(7,4,"Screw Ø [mm]","head"); put(7,6, snap.get("screw_d_mm",""))
                 put(7,7,"Pcs. 1","head");       put(7,8, snap.get("pcs_1",""))
 
                 # Key data (H..N)
                 start = 8
-                ws.merge_cells(start_row=start-1, start_column=8, end_row=start-1, end_column=14)
-                put(start-1,8,"Key data","head")
+                mput(start-1, 8, start-1, 14, "Key data", "head")
                 kd = [
                     ("Cycle time [s]", "cycle_time_s"),
                     ("Injection time [s]", "injection_time_s"),
@@ -822,14 +831,12 @@ class MachineRecipesView(ctk.CTkFrame):
                 rr = start
                 for label, fid in kd:
                     put(rr,8,label,"head")
-                    ws.merge_cells(start_row=rr, start_column=9, end_row=rr, end_column=14)
-                    put(rr,9, snap.get(fid,""))
+                    mput(rr, 9, rr, 14, snap.get(fid, ""))
                     rr += 1
 
                 # Injection (A..G)
                 injstart = start
-                ws.merge_cells(start_row=injstart-1, start_column=1, end_row=injstart-1, end_column=7)
-                put(injstart-1,1,"Injection","head")
+                mput(injstart-1, 1, injstart-1, 7, "Injection", "head")
 
                 def triple(r, label, a,b,c):
                     put(r,1,label,"head")
@@ -843,22 +850,17 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Plasticizing
                 plr = rr + 1
-                ws.merge_cells(start_row=plr, start_column=1, end_row=plr, end_column=7)
-                put(plr,1,"Plasticizing (St.1)","head")
+                mput(plr, 1, plr, 7, "Plasticizing (St.1)", "head")
                 put(plr+1,1,"Screw speed [m/min]","head")
-                ws.merge_cells(start_row=plr+1, start_column=3, end_row=plr+1, end_column=5)
-                put(plr+1,3, snap.get("plast_screw_speed",""))
+                mput(plr+1, 3, plr+1, 5, snap.get("plast_screw_speed", ""))
                 put(plr+2,1,"Back pressure [bar]","head")
-                ws.merge_cells(start_row=plr+2, start_column=3, end_row=plr+2, end_column=5)
-                put(plr+2,3, snap.get("plast_back_pressure",""))
+                mput(plr+2, 3, plr+2, 5, snap.get("plast_back_pressure", ""))
                 put(plr+3,1,"End of stage [ccm]","head")
-                ws.merge_cells(start_row=plr+3, start_column=3, end_row=plr+3, end_column=5)
-                put(plr+3,3, snap.get("plast_end_stage_ccm",""))
+                mput(plr+3, 3, plr+3, 5, snap.get("plast_end_stage_ccm", ""))
 
                 # Holding pressure
                 hpr = plr + 5
-                ws.merge_cells(start_row=hpr, start_column=1, end_row=hpr, end_column=7)
-                put(hpr,1,"Holding pressure (Pcs.2)","head")
+                mput(hpr, 1, hpr, 7, "Holding pressure (Pcs.2)", "head")
                 put(hpr+1,1,"Time [s]","head")
                 put(hpr+1,3, snap.get("hp_time_1","")); put(hpr+1,4, snap.get("hp_time_2","")); put(hpr+1,5, snap.get("hp_time_3",""))
                 put(hpr+2,1,"Pressure [bar]","head")
@@ -867,8 +869,7 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Temperatures
                 tr = hpr + 4
-                ws.merge_cells(start_row=tr, start_column=1, end_row=tr, end_column=14)
-                put(tr,1,"Temperatures","head")
+                mput(tr, 1, tr, 14, "Temperatures", "head")
                 put(tr+1,1,"Cylinder temp. [°C]","head")
                 for i,k in enumerate(["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], start=2):
                     put(tr+1,i, snap.get(k,""))
@@ -881,8 +882,7 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Opening
                 mor = tr + 6
-                ws.merge_cells(start_row=mor, start_column=1, end_row=mor, end_column=7)
-                put(mor,1,"Mould movements — Opening (St.1 / St.2 / St.3)","head")
+                mput(mor, 1, mor, 7, "Mould movements — Opening (St.1 / St.2 / St.3)", "head")
                 put(mor+1,1,"End of stage [mm]","head")
                 put(mor+1,3, snap.get("open_end_mm_1","")); put(mor+1,4, snap.get("open_end_mm_2","")); put(mor+1,5, snap.get("open_end_mm_3",""))
                 put(mor+2,1,"Speed [mm/s]","head")
@@ -892,8 +892,7 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Closing
                 mcr = mor + 5
-                ws.merge_cells(start_row=mcr, start_column=8, end_row=mcr, end_column=14)
-                put(mcr,8,"Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)","head")
+                mput(mcr, 8, mcr, 14, "Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", "head")
                 put(mcr+1,8,"End of stage [mm]","head")
                 for i,k in enumerate(["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], start=9):
                     put(mcr+1,i, snap.get(k,""))
@@ -906,11 +905,9 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Clamping
                 cl = mcr + 5
-                ws.merge_cells(start_row=cl, start_column=1, end_row=cl, end_column=5)
-                put(cl,1,"Clamping","head")
+                mput(cl, 1, cl, 5, "Clamping", "head")
                 put(cl+1,1,"Mould closed [kN]","head")
-                ws.merge_cells(start_row=cl+1, start_column=3, end_row=cl+1, end_column=5)
-                put(cl+1,3, snap.get("mould_closed_kn",""))
+                mput(cl+1, 3, cl+1, 5, snap.get("mould_closed_kn", ""))
 
                 # Navegación
                 ws.freeze_panes = "A6"
@@ -939,9 +936,9 @@ class MachineRecipesView(ctk.CTkFrame):
                 snap = dict(last_snap); _ = snap.pop("_meta", {})
                 W, H = landscape(A4)
                 margin = 12*mm
-                col_gap = 12*mm
+                col_gap = 18*mm
                 col_w = (W - margin*2 - col_gap) / 2.0
-                row_h = 9*mm
+                row_h = 10*mm
 
                 logo_path = LOGO_PATH if os.path.exists(LOGO_PATH) else ""
                 c = canvas.Canvas(path, pagesize=landscape(A4))
@@ -953,9 +950,11 @@ class MachineRecipesView(ctk.CTkFrame):
                     return W, H, margin, H - margin
 
                 def draw_head(txt):
+                    c.setFillColorRGB(0.86, 0.92, 1)
+                    c.rect(x, y - row_h, col_w, row_h, stroke=0, fill=1)
                     c.setFillColorRGB(0.11, 0.30, 0.85)
                     c.setFont("Helvetica-Bold", 12)
-                    c.drawString(x, y, _safe_pdf(txt))
+                    c.drawString(x + 2, y - row_h + 3, _safe_pdf(txt))
                     c.setFillColorRGB(0, 0, 0)
 
                 def draw_box(lbl, val, w, h=row_h, center=False):
@@ -971,10 +970,10 @@ class MachineRecipesView(ctk.CTkFrame):
                         else:
                             c.drawString(x+2, y - h + 4, _safe_pdf(val))
 
-                def advance(h=row_h+4):
+                def advance(h=row_h+6):
                     nonlocal y, x, col
                     y -= h
-                    if y < margin + row_h*4:
+                    if y < margin + row_h*5:
                         if col == 0:
                             col = 1; x = margin + col_w + col_gap; y = H - margin - 24
                         else:
