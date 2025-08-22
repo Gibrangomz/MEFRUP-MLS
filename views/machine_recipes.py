@@ -48,10 +48,10 @@ EXCEL_MAP_EXTRA = {
     "inj_flow_1":      "C13", "inj_flow_2":      "D13", "inj_flow_3":      "E13",
     "inj_end_stage_ccm_1":"C14","inj_end_stage_ccm_2":"D14","inj_end_stage_ccm_3":"E14",
 
-    # Plasticizing
-    "plast_screw_speed":   "C17",
-    "plast_back_pressure": "C18",
-    "plast_end_stage_ccm": "C19",
+    # Plasticizing (3 columnas)
+    "plast_screw_speed_1":   "C17", "plast_screw_speed_2":   "D17", "plast_screw_speed_3":   "E17",
+    "plast_back_pressure_1": "C18", "plast_back_pressure_2": "D18", "plast_back_pressure_3": "E18",
+    "plast_end_stage_ccm_1": "C19", "plast_end_stage_ccm_2": "D19", "plast_end_stage_ccm_3": "E19",
 
     # Holding pressure
     "hp_time_1": "C22", "hp_time_2": "D22", "hp_time_3": "E22",
@@ -88,7 +88,9 @@ NUM_FIELDS = {
     "inj_end_stage_mm_1","inj_end_stage_mm_2","inj_end_stage_mm_3",
     "inj_flow_1","inj_flow_2","inj_flow_3",
     "inj_end_stage_ccm_1","inj_end_stage_ccm_2","inj_end_stage_ccm_3",
-    "plast_screw_speed","plast_back_pressure","plast_end_stage_ccm",
+    "plast_screw_speed_1","plast_screw_speed_2","plast_screw_speed_3",
+    "plast_back_pressure_1","plast_back_pressure_2","plast_back_pressure_3",
+    "plast_end_stage_ccm_1","plast_end_stage_ccm_2","plast_end_stage_ccm_3",
     "hp_time_1","hp_time_2","hp_time_3",
     "hp_press_1","hp_press_2","hp_press_3","hp_press_4",
     "temp_c1","temp_c2","temp_c3","temp_c4","temp_c5",
@@ -412,9 +414,9 @@ class MachineRecipesView(ctk.CTkFrame):
         ])
 
         self._section_table(parent, "Plasticizing (St.1)", [
-            ("Screw speed [m/min]",             ["plast_screw_speed"]),
-            ("Back pressure [bar]",             ["plast_back_pressure"]),
-            ("End of stage [ccm]",              ["plast_end_stage_ccm"]),
+            ("Screw speed [m/min]",             ["plast_screw_speed_1", "plast_screw_speed_2", "plast_screw_speed_3"]),
+            ("Back pressure [bar]",             ["plast_back_pressure_1", "plast_back_pressure_2", "plast_back_pressure_3"]),
+            ("End of stage [ccm]",              ["plast_end_stage_ccm_1", "plast_end_stage_ccm_2", "plast_end_stage_ccm_3"]),
         ])
 
         self._section_table(parent, "Holding pressure (Pcs.2)", [
@@ -778,10 +780,13 @@ class MachineRecipesView(ctk.CTkFrame):
 
             # Plasticizing
             pl = section("Plasticizing (St.1)")
-            pl.grid_columnconfigure((0,1), weight=1)
-            row_labeled(pl, 0, "Screw speed [m/min]", [clean.get("plast_screw_speed","")])
-            row_labeled(pl, 1, "Back pressure [bar]", [clean.get("plast_back_pressure","")])
-            row_labeled(pl, 2, "End of stage [ccm]", [clean.get("plast_end_stage_ccm","")])
+            pl.grid_columnconfigure((0,1,2,3), weight=1)
+            row_labeled(pl, 0, "Screw speed [m/min]",
+                        [clean.get("plast_screw_speed_1",""), clean.get("plast_screw_speed_2",""), clean.get("plast_screw_speed_3","")])
+            row_labeled(pl, 1, "Back pressure [bar]",
+                        [clean.get("plast_back_pressure_1",""), clean.get("plast_back_pressure_2",""), clean.get("plast_back_pressure_3","")])
+            row_labeled(pl, 2, "End of stage [ccm]",
+                        [clean.get("plast_end_stage_ccm_1",""), clean.get("plast_end_stage_ccm_2",""), clean.get("plast_end_stage_ccm_3","")])
 
             # Holding pressure
             hp = section("Holding pressure (Pcs.2)")
