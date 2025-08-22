@@ -216,7 +216,6 @@ def _export_to_template_xlsx(snap: dict, out_path: str, sheet_name: str = "Hoja1
 
     try:
         from openpyxl import load_workbook
-        from openpyxl.utils.cell import coordinate_from_string
     except Exception:
         raise RuntimeError("Falta dependencia openpyxl. Instálala con: pip install openpyxl")
 
@@ -232,9 +231,17 @@ def _export_to_template_xlsx(snap: dict, out_path: str, sheet_name: str = "Hoja1
 
     # Escribe campos
     for fid, cell in full_map.items():
-        val = snap.get(fid, "")
+        raw = snap.get(fid, "")
         try:
-            ws[cell].value = _safe_excel(val)
+            if raw in (None, ""):
+                ws[cell].value = None
+            elif fid in NUM_FIELDS:
+                try:
+                    ws[cell].value = float(str(raw).replace(",", "."))
+                except Exception:
+                    ws[cell].value = _safe_excel(raw)
+            else:
+                ws[cell].value = _safe_excel(raw)
         except Exception:
             # Si la celda no existe por algún motivo, se ignora ese campo
             pass
@@ -845,195 +852,48 @@ class MachineRecipesView(ctk.CTkFrame):
                 return
             ver = tree.item(sel[0], "values")[0]
             ver_label = f"V.{ver[1:]}" if str(ver).lower().startswith("v") else str(ver)
-            title_txt = f"Receta {ver_label}"
             path = filedialog.asksaveasfilename(
                 defaultextension=".pdf",
                 filetypes=[("PDF", "*.pdf")],
-                initialfile=f"{self.current_mold}_{ver}.pdf"
+                initialfile=f"{self.current_mold}_{ver}.pdf",
             )
             if not path:
                 return
             try:
+                import tempfile
                 from reportlab.lib.pagesizes import A4, landscape
                 from reportlab.pdfgen import canvas
-                from reportlab.lib.units import mm
                 from reportlab.lib.utils import ImageReader
+                import excel2img
+                from PIL import Image
 
                 snap = dict(last_snap); snap.pop("_meta", None)
-                W, H = landscape(A4)
-                margin = 12*mm
-                col_gap = 18*mm
-                col_w = (W - margin*2 - col_gap) / 2.0
-                row_h = 10*mm
+                tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx"); tmp_xlsx.close()
+                tmp_png = tempfile.NamedTemporaryFile(delete=False, suffix=".png"); tmp_png.close()
+                try:
+                    _export_to_template_xlsx(snap, tmp_xlsx.name)
+                    excel2img.export_img(tmp_xlsx.name, tmp_png.name, "Hoja1", None)
 
-                logo_path = (LOGO_PATH if 'LOGO_PATH' in globals() and os.path.exists(LOGO_PATH) else "")
-                c = canvas.Canvas(path, pagesize=landscape(A4))
-                c.setStrokeColorRGB(0.7, 0.7, 0.7)
-                c.setLineWidth(0.5)
-
-                def draw_head(x, y, w, text):
-                    c.setFillColorRGB(0.86, 0.92, 1)
-                    c.rect(x, y - row_h, w, row_h, stroke=0, fill=1)
-                    c.setFillColorRGB(0.11, 0.30, 0.85)
-                    c.setFont("Helvetica-Bold", 12)
-                    c.drawString(x + 2, y - row_h + 3, _safe_pdf(text))
-                    c.setFillColorRGB(0, 0, 0)
-
-                def draw_row(x, y, wlbl, label, values, ncols=1):
-                    c.setFont("Helvetica-Bold", 9)
-                    c.drawString(x+2, y - 12, _safe_pdf(label))
-                    wcell = (col_w - wlbl) / max(1, ncols)
-                    for i in range(ncols):
-                        cx = x + wlbl + i*wcell
-                        c.rect(cx, y - row_h, wcell, row_h, stroke=1, fill=0)
-                        if i < len(values):
-                            c.setFont("Helvetica", 10)
-                            c.drawCentredString(cx + wcell/2, y - row_h/2 - 3, _safe_pdf(values[i]))
-                    return y - (row_h + 6)
-
-                def ensure_space(lines=6):
-                    nonlocal x, y
-                    if y < margin + (row_h+6)*lines:
-                        if x == margin:
-                            x = margin + col_w + col_gap; y = H - margin - 24
-                        else:
-                            x, y = new_page()
-                
-                # Header
-                if logo_path:
-                    try:
-                        img = ImageReader(logo_path)
-                        c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
-                                    preserveAspectRatio=True, mask='auto')
-                    except Exception:
-                        pass
-                c.setFont("Helvetica-Bold", 14)
-                c.drawString(margin, H - margin - 8, _safe_pdf(title_txt))
-
-                x, y = margin, H - margin - 24
-                wlbl = 65*mm
-
-                # Cabecera (como plantilla)
-                y = draw_row(x, y, wlbl, "Program",        [snap.get("program","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Date of entry:", [snap.get("date_of_entry","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Cavities",       [snap.get("cavities","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Mould desig.",   [snap.get("mould_desig","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Machine",        [snap.get("machine","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Material",       [snap.get("material","")], ncols=1)
-
-                def new_page():
-                    c.showPage()
-                    if logo_path:
+                    img = Image.open(tmp_png.name); w_img, h_img = img.size; img.close()
+                    page_w, page_h = landscape(A4)
+                    scale = min(page_w / w_img, page_h / h_img)
+                    c = canvas.Canvas(path, pagesize=landscape(A4))
+                    c.drawImage(ImageReader(tmp_png.name),
+                                (page_w - w_img*scale)/2,
+                                (page_h - h_img*scale)/2,
+                                width=w_img*scale, height=h_img*scale)
+                    c.showPage(); c.save()
+                finally:
+                    for p in (tmp_xlsx.name, tmp_png.name):
                         try:
-                            img = ImageReader(logo_path)
-                            c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
-                                        preserveAspectRatio=True, mask='auto')
+                            os.remove(p)
                         except Exception:
                             pass
-                    c.setFont("Helvetica-Bold", 14)
-                    c.drawString(margin, H - margin - 8, _safe_pdf(title_txt))
-                    return margin, H - margin - 24
-
-                # Injection unit
-                ensure_space(3)
-                draw_head(x, y, col_w, "Injection unit"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "Screw Ø [mm]", [snap.get("screw_d_mm","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Pcs. 1",       [snap.get("pcs_1","")], ncols=1)
-
-                # Key data
-                ensure_space(16)
-                draw_head(x, y, col_w, "Key data"); y -= (row_h + 8)
-                for lab, fid in [
-                    ("Cycle time [s]", "cycle_time_s"),
-                    ("Injection time [s]", "injection_time_s"),
-                    ("Holding press. time [s]", "holding_press_time_s"),
-                    ("Rem. cooling time [s]", "rem_cooling_time_s"),
-                    ("Dosage time [s]", "dosage_time_s"),
-                    ("Screw stroke [mm]", "screw_stroke_mm"),
-                    ("Mould stroke [mm]", "mould_stroke_mm"),
-                    ("Ejector stroke [mm]", "ejector_stroke_mm"),
-                    ("Shot weight [g]", "shot_weight_g"),
-                    ("Plasticising flow [kg/h]", "plasticising_flow_kgh"),
-                    ("Dosage capacity [g/s]", "dosage_capacity_gs"),
-                    ("Dosage volume [ccm]", "dosage_volume_ccm"),
-                    ("Material cushion [ccm]", "material_cushion_ccm"),
-                    ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
-                ]:
-                    y = draw_row(x, y, wlbl, lab, [snap.get(fid,"")], ncols=1)
-
-                if x == margin:
-                    x = margin + col_w + col_gap; y = H - margin - 24
-
-                # Injection (3 columnas)
-                ensure_space(6)
-                draw_head(x, y, col_w, "Injection"); y -= (row_h + 8)
-                def tri(lbl,a,b,c):
-                    nonlocal y
-                    y = draw_row(x, y, wlbl, lbl,
-                                 [snap.get(a,""), snap.get(b,""), snap.get(c,"")], ncols=3)
-                tri("Injection press. limiting [bar]", "inj_press_lim_1","inj_press_lim_2","inj_press_lim_3")
-                tri("Injection speed [mm/s]",          "inj_speed_1","inj_speed_2","inj_speed_3")
-                tri("End of stage [mm]",               "inj_end_stage_mm_1","inj_end_stage_mm_2","inj_end_stage_mm_3")
-                tri("Injection flow [ccm/s]",          "inj_flow_1","inj_flow_2","inj_flow_3")
-                tri("End of stage [ccm]",              "inj_end_stage_ccm_1","inj_end_stage_ccm_2","inj_end_stage_ccm_3")
-
-                # Plasticizing
-                ensure_space(4)
-                draw_head(x, y, col_w, "Plasticizing (St.1)"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "Screw speed [m/min]", [snap.get("plast_screw_speed","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Back pressure [bar]", [snap.get("plast_back_pressure","")], ncols=1)
-                y = draw_row(x, y, wlbl, "End of stage [ccm]",  [snap.get("plast_end_stage_ccm","")], ncols=1)
-
-                # Holding pressure
-                ensure_space(4)
-                draw_head(x, y, col_w, "Holding pressure (Pcs.2)"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "Time [s]",
-                             [snap.get("hp_time_1",""), snap.get("hp_time_2",""), snap.get("hp_time_3","")], ncols=3)
-                y = draw_row(x, y, wlbl, "Pressure [bar]",
-                             [snap.get("hp_press_1",""), snap.get("hp_press_2",""),
-                              snap.get("hp_press_3",""), snap.get("hp_press_4","")], ncols=4)
-
-                # Temperatures
-                ensure_space(6)
-                draw_head(x, y, col_w, "Temperatures"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "Cylinder temp. [°C]",
-                             [snap.get(k,"") for k in ["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"]], ncols=5)
-                y = draw_row(x, y, wlbl, "Tolerances [°C]",
-                             [snap.get(k,"") for k in ["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"]], ncols=5)
-                y = draw_row(x, y, wlbl, "Feed yoke temperature [°C]", [snap.get("feed_yoke_temp","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Lower enable tol. [°C]",     [snap.get("lower_enable_tol","")], ncols=1)
-                y = draw_row(x, y, wlbl, "Upper switch-off tol. [°C]", [snap.get("upper_switch_off_tol","")], ncols=1)
-
-                # Opening
-                ensure_space(5)
-                draw_head(x, y, col_w, "Mould movements — Opening (St.1 / St.2 / St.3)"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "End of stage [mm]",
-                             [snap.get("open_end_mm_1",""), snap.get("open_end_mm_2",""), snap.get("open_end_mm_3","")], ncols=3)
-                y = draw_row(x, y, wlbl, "Speed [mm/s]",
-                             [snap.get("open_speed_1",""), snap.get("open_speed_2",""), snap.get("open_speed_3","")], ncols=3)
-                y = draw_row(x, y, wlbl, "Force [kN]",
-                             [snap.get("open_force_1",""), snap.get("open_force_2",""), snap.get("open_force_3","")], ncols=3)
-
-                # Closing
-                ensure_space(6)
-                draw_head(x, y, col_w, "Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "End of stage [mm]",
-                             [snap.get(k,"") for k in ["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"]], ncols=4)
-                y = draw_row(x, y, wlbl, "Speed [mm/s]",
-                             [snap.get(k,"") for k in ["close_speed_1","close_speed_2","close_speed_3","close_speed_4"]], ncols=4)
-                y = draw_row(x, y, wlbl, "Force [kN]",
-                             [snap.get(k,"") for k in ["close_force_1","close_force_2","close_force_3"]], ncols=3)
-
-                # Clamping
-                ensure_space(2)
-                draw_head(x, y, col_w, "Clamping"); y -= (row_h + 8)
-                y = draw_row(x, y, wlbl, "Mould closed [kN]", [snap.get("mould_closed_kn","")], ncols=1)
-
-                c.showPage(); c.save()
-                messagebox.showinfo("Exportar PDF","Archivo PDF generado correctamente.")
+                messagebox.showinfo("Exportar PDF", "Archivo PDF generado correctamente.")
             except ModuleNotFoundError:
-                messagebox.showwarning("Dependencia faltante",
-                    "Para exportar PDF instala reportlab:\n\npip install reportlab")
+                messagebox.showwarning(
+                    "Dependencia faltante",
+                    "Para exportar PDF instala excel2img, pillow y reportlab:\n\npip install excel2img pillow reportlab")
             except Exception as e:
                 messagebox.showerror("Exportar PDF", f"No se pudo exportar:\n{e}")
 
