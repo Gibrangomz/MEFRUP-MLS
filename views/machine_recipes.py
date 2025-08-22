@@ -758,16 +758,22 @@ class MachineRecipesView(ctk.CTkFrame):
                 val.border = border
                 if "val" not in wb.named_styles: wb.add_named_style(val)
 
+                title = NamedStyle(name="title")
+                title.font = Font(bold=True, size=16, color="FFFFFF")
+                title.alignment = Alignment(horizontal="center", vertical="center")
+                title.border = border
+                title.fill = PatternFill("solid", start_color="1D4ED8", end_color="1D4ED8")
+                if "title" not in wb.named_styles: wb.add_named_style(title)
+
                 # Anchos A..N
                 widths = [16,18,18,14,14,14,14,16,16,16,16,16,16,18]
                 for i, w in enumerate(widths, start=1):
                     ws.column_dimensions[chr(64+i)].width = w
 
                 # Logo opcional
-                logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
-                if os.path.exists(logo_path):
+                if os.path.exists(LOGO_PATH):
                     try:
-                        img = XLImage(logo_path); img.height = 40; img.width = 140
+                        img = XLImage(LOGO_PATH); img.height = 40; img.width = 140
                         ws.add_image(img, "N1")
                     except Exception:
                         pass
@@ -778,7 +784,8 @@ class MachineRecipesView(ctk.CTkFrame):
                     return x
 
                 # Título + Cabecera
-                ws.merge_cells("A1:N1"); put(1,1,"Parameter overview","head")
+                ws.row_dimensions[1].height = 28
+                ws.merge_cells("A1:N1"); put(1,1,"Parameter overview","title")
                 ws.merge_cells("B2:E2"); put(2,1,"Program","head");        put(2,2, snap.get("program",""))
                 ws.merge_cells("G2:N2"); put(2,6,"Date of entry:","head"); put(2,7, snap.get("date_of_entry",""))
                 ws.merge_cells("B3:E3"); put(3,1,"Mould desig.","head");   put(3,2, snap.get("mould_desig",""))
@@ -936,18 +943,25 @@ class MachineRecipesView(ctk.CTkFrame):
                 col_w = (W - margin*2 - col_gap) / 2.0
                 row_h = 9*mm
 
+                logo_path = LOGO_PATH if os.path.exists(LOGO_PATH) else ""
                 c = canvas.Canvas(path, pagesize=landscape(A4))
+                c.setStrokeColorRGB(0.7, 0.7, 0.7)
+                c.setLineWidth(0.5)
 
                 def new_page():
                     c.showPage()
                     return W, H, margin, H - margin
 
                 def draw_head(txt):
+                    c.setFillColorRGB(0.11, 0.30, 0.85)
                     c.setFont("Helvetica-Bold", 12)
                     c.drawString(x, y, _safe_pdf(txt))
+                    c.setFillColorRGB(0, 0, 0)
 
                 def draw_box(lbl, val, w, h=row_h, center=False):
-                    c.rect(x, y - h, w, h, stroke=1, fill=0)
+                    c.setFillColorRGB(0.96, 0.96, 0.96)
+                    c.rect(x, y - h, w, h, stroke=1, fill=1)
+                    c.setFillColorRGB(0, 0, 0)
                     c.setFont("Helvetica-Bold", 9)
                     c.drawString(x+2, y - 12, _safe_pdf(lbl))
                     if val is not None:
@@ -967,7 +981,7 @@ class MachineRecipesView(ctk.CTkFrame):
                             col = 0; x = margin
                             _, _, _, y0 = new_page(); y = y0 - 24
                         # logo + título por página
-                        if os.path.exists(logo_path):
+                        if logo_path:
                             try:
                                 img = ImageReader(logo_path)
                                 c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
@@ -978,8 +992,7 @@ class MachineRecipesView(ctk.CTkFrame):
                         c.drawString(margin, H - margin - 8, _safe_pdf("Parameter overview"))
 
                 # logo + título primera página
-                logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
-                if os.path.exists(logo_path):
+                if logo_path:
                     try:
                         img = ImageReader(logo_path)
                         c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
