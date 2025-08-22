@@ -132,6 +132,22 @@ def _ascii(s: str) -> str:
     if s is None: return ""
     return (str(s).replace("\u2014","-").encode("latin-1","replace").decode("latin-1"))
 
+# ---------- Sanitizers para export ----------
+try:
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+except Exception:
+    ILLEGAL_CHARACTERS_RE = None
+
+def _safe_excel(val: str) -> str:
+    s = "" if val is None else str(val)
+    if ILLEGAL_CHARACTERS_RE:
+        s = ILLEGAL_CHARACTERS_RE.sub("", s)
+    return s
+
+def _safe_pdf(val: str) -> str:
+    # Latin-1 friendly + sin saltos raros
+    return _ascii(val).replace("\r", " ").replace("\n", " ")
+
 # ============================================================
 #                          VIEW
 # ============================================================
@@ -583,6 +599,11 @@ class MachineRecipesView(ctk.CTkFrame):
                 if q and q not in rowtxt: continue
                 tree.insert("", "end", values=(ver, ts, usuario, motivo, cambios))
 
+            # --- AUTOSELECT last ---
+            items = tree.get_children()
+            if items:
+                tree.selection_set(items[-1]); tree.see(items[-1]); on_select()
+
         def on_select(*_):
             nonlocal last_snap
             clear_detail()
@@ -701,62 +722,80 @@ class MachineRecipesView(ctk.CTkFrame):
             cl.grid_columnconfigure((0,1), weight=1)
             row_labeled(cl, 0, "Mould closed [kN]", [clean.get("mould_closed_kn","")])
 
+        # ---------------------- EXPORTS (integrados) ----------------------
         def export_excel():
             sel = tree.selection()
-            if not sel: return
+            if not sel:
+                return
             ver = tree.item(sel[0], "values")[0]
             path = filedialog.asksaveasfilename(defaultextension=".xlsx",
                                                 filetypes=[("Excel", "*.xlsx")],
                                                 initialfile=f"{self.current_mold}_{ver}.xlsx")
-            if not path: return
+            if not path:
+                return
             try:
                 from openpyxl import Workbook
-                from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+                from openpyxl.styles import Font, Alignment, Border, Side, PatternFill, NamedStyle
                 from openpyxl.drawing.image import Image as XLImage
 
-                snap = dict(last_snap); meta = snap.pop("_meta", {})
+                snap = dict(last_snap); _ = snap.pop("_meta", {})
                 wb = Workbook(); ws = wb.active; ws.title = "Recipe"
+
+                # Estilos
                 thin = Side(style="thin", color="000000")
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                def cell(r, c, val="", bold=False, center=True, fill=None):
-                    x = ws.cell(row=r, column=c, value=val)
-                    x.font = Font(bold=bold)
-                    x.alignment = Alignment(horizontal=("center" if center else "left"), vertical="center")
-                    x.border = border
-                    if fill: x.fill = PatternFill("solid", start_color=fill, end_color=fill)
-                    return x
-                # ancho columnas
-                for col in range(1, 15): ws.column_dimensions[chr(64+col)].width = 14
+                head_fill = PatternFill("solid", start_color="F3F4F6", end_color="F3F4F6")
 
-                # Logo (opcional)
+                head = NamedStyle(name="head")
+                head.font = Font(bold=True)
+                head.alignment = Alignment(horizontal="left", vertical="center")
+                head.border = border; head.fill = head_fill
+                if "head" not in wb.named_styles: wb.add_named_style(head)
+
+                val = NamedStyle(name="val")
+                val.font = Font(bold=False)
+                val.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                val.border = border
+                if "val" not in wb.named_styles: wb.add_named_style(val)
+
+                # Anchos A..N
+                widths = [16,18,18,14,14,14,14,16,16,16,16,16,16,18]
+                for i, w in enumerate(widths, start=1):
+                    ws.column_dimensions[chr(64+i)].width = w
+
+                # Logo opcional
                 logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
                 if os.path.exists(logo_path):
                     try:
-                        img = XLImage(logo_path); img.height = 40; img.width = 120
+                        img = XLImage(logo_path); img.height = 40; img.width = 140
                         ws.add_image(img, "N1")
-                    except Exception: pass
+                    except Exception:
+                        pass
 
-                # Título
-                ws.merge_cells("A1:N1"); cell(1,1,"Parameter overview", bold=True, center=False)
+                def put(r, c, text, style="val"):
+                    x = ws.cell(row=r, column=c, value=_safe_excel(text))
+                    x.style = style
+                    return x
 
-                # Cabecera
-                cell(2,1,"Program", True, False);          ws.merge_cells("B2:E2"); cell(2,2, snap.get("program",""), False)
-                cell(2,6,"Date of entry:", True, False);   ws.merge_cells("G2:N2"); cell(2,7, snap.get("date_of_entry",""), False)
-                cell(3,1,"Mould desig.", True, False);     ws.merge_cells("B3:E3"); cell(3,2, snap.get("mould_desig",""), False)
-                cell(3,6,"Cavities", True, False);         ws.merge_cells("G3:N3"); cell(3,7, snap.get("cavities",""), False)
-                cell(4,1,"Material", True, False);         ws.merge_cells("B4:E4"); cell(4,2, snap.get("material",""), False)
-                cell(4,6,"Machine", True, False);          ws.merge_cells("G4:N4"); cell(4,7, snap.get("machine",""), False)
-
-                # Separador
-                ws.merge_cells("A5:N5"); cell(5,1,"")
+                # Título + Cabecera
+                ws.merge_cells("A1:N1"); put(1,1,"Parameter overview","head")
+                ws.merge_cells("B2:E2"); put(2,1,"Program","head");        put(2,2, snap.get("program",""))
+                ws.merge_cells("G2:N2"); put(2,6,"Date of entry:","head"); put(2,7, snap.get("date_of_entry",""))
+                ws.merge_cells("B3:E3"); put(3,1,"Mould desig.","head");   put(3,2, snap.get("mould_desig",""))
+                ws.merge_cells("G3:N3"); put(3,6,"Cavities","head");       put(3,7, snap.get("cavities",""))
+                ws.merge_cells("B4:E4"); put(4,1,"Material","head");       put(4,2, snap.get("material",""))
+                ws.merge_cells("G4:N4"); put(4,6,"Machine","head");        put(4,7, snap.get("machine",""))
+                ws.merge_cells("A5:N5"); put(5,1,"")
 
                 # Injection unit
-                ws.merge_cells("A6:N6"); cell(6,1,"Injection unit", bold=True, center=True)
-                cell(7,4,"Screw Ø [mm]", True, False); cell(7,6, snap.get("screw_d_mm",""))
-                cell(7,7,"Pcs. 1", True, False); cell(7,8, snap.get("pcs_1",""))
+                ws.merge_cells("A6:N6"); put(6,1,"Injection unit","head")
+                put(7,4,"Screw Ø [mm]","head"); put(7,6, snap.get("screw_d_mm",""))
+                put(7,7,"Pcs. 1","head");       put(7,8, snap.get("pcs_1",""))
 
-                # Key data block (col H..N)
+                # Key data (H..N)
                 start = 8
+                ws.merge_cells(start_row=start-1, start_column=8, end_row=start-1, end_column=14)
+                put(start-1,8,"Key data","head")
                 kd = [
                     ("Cycle time [s]", "cycle_time_s"),
                     ("Injection time [s]", "injection_time_s"),
@@ -773,92 +812,92 @@ class MachineRecipesView(ctk.CTkFrame):
                     ("Material cushion [ccm]", "material_cushion_ccm"),
                     ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
                 ]
-                ws.merge_cells(start_row=start-1, start_column=8, end_row=start-1, end_column=14)
-                cell(start-1, 8, "Key data", bold=True, center=True)
                 rr = start
                 for label, fid in kd:
-                    cell(rr,8,label, True, False); ws.merge_cells(rr,9,rr,14); cell(rr,9, snap.get(fid,""), False); rr += 1
+                    put(rr,8,label,"head"); ws.merge_cells(rr,9,rr,14); put(rr,9, snap.get(fid,""))
+                    rr += 1
 
-                # Injection table (A..G)
+                # Injection (A..G)
                 injstart = start
                 ws.merge_cells(start_row=injstart-1, start_column=1, end_row=injstart-1, end_column=7)
-                cell(injstart-1,1,"Injection", bold=True, center=False)
+                put(injstart-1,1,"Injection","head")
+
                 def triple(r, label, a,b,c):
-                    cell(r,1,label,True,False)
-                    cell(r,3,a); cell(r,4,b); cell(r,5,c)
-                triple(injstart+0, "Injection press. limiting [bar]",
-                       snap.get("inj_press_lim_1",""), snap.get("inj_press_lim_2",""), snap.get("inj_press_lim_3",""))
-                triple(injstart+1, "Injection speed [mm/s]",
-                       snap.get("inj_speed_1",""), snap.get("inj_speed_2",""), snap.get("inj_speed_3",""))
-                triple(injstart+2, "End of stage [mm]",
-                       snap.get("inj_end_stage_mm_1",""), snap.get("inj_end_stage_mm_2",""), snap.get("inj_end_stage_mm_3",""))
-                triple(injstart+3, "Injection flow [ccm/s]",
-                       snap.get("inj_flow_1",""), snap.get("inj_flow_2",""), snap.get("inj_flow_3",""))
-                triple(injstart+4, "End of stage [ccm]",
-                       snap.get("inj_end_stage_ccm_1",""), snap.get("inj_end_stage_ccm_2",""), snap.get("inj_end_stage_ccm_3",""))
+                    put(r,1,label,"head")
+                    put(r,3, snap.get(a,"")); put(r,4, snap.get(b,"")); put(r,5, snap.get(c,""))
+
+                triple(injstart+0, "Injection press. limiting [bar]", "inj_press_lim_1","inj_press_lim_2","inj_press_lim_3")
+                triple(injstart+1, "Injection speed [mm/s]",          "inj_speed_1","inj_speed_2","inj_speed_3")
+                triple(injstart+2, "End of stage [mm]",               "inj_end_stage_mm_1","inj_end_stage_mm_2","inj_end_stage_mm_3")
+                triple(injstart+3, "Injection flow [ccm/s]",          "inj_flow_1","inj_flow_2","inj_flow_3")
+                triple(injstart+4, "End of stage [ccm]",              "inj_end_stage_ccm_1","inj_end_stage_ccm_2","inj_end_stage_ccm_3")
 
                 # Plasticizing
                 plr = rr + 1
                 ws.merge_cells(start_row=plr, start_column=1, end_row=plr, end_column=7)
-                cell(plr,1,"Plasticizing (St.1)", bold=True, center=False)
-                cell(plr+1,1,"Screw speed [m/min]", True, False); ws.merge_cells(plr+1,3,plr+1,5); cell(plr+1,3, snap.get("plast_screw_speed",""))
-                cell(plr+2,1,"Back pressure [bar]", True, False); ws.merge_cells(plr+2,3,plr+2,5); cell(plr+2,3, snap.get("plast_back_pressure",""))
-                cell(plr+3,1,"End of stage [ccm]", True, False); ws.merge_cells(plr+3,3,plr+3,5); cell(plr+3,3, snap.get("plast_end_stage_ccm",""))
+                put(plr,1,"Plasticizing (St.1)","head")
+                put(plr+1,1,"Screw speed [m/min]","head"); ws.merge_cells(plr+1,3,plr+1,5); put(plr+1,3, snap.get("plast_screw_speed",""))
+                put(plr+2,1,"Back pressure [bar]","head"); ws.merge_cells(plr+2,3,plr+2,5); put(plr+2,3, snap.get("plast_back_pressure",""))
+                put(plr+3,1,"End of stage [ccm]","head");  ws.merge_cells(plr+3,3,plr+3,5); put(plr+3,3, snap.get("plast_end_stage_ccm",""))
 
                 # Holding pressure
                 hpr = plr + 5
                 ws.merge_cells(start_row=hpr, start_column=1, end_row=hpr, end_column=7)
-                cell(hpr,1,"Holding pressure (Pcs.2)", bold=True, center=False)
-                cell(hpr+1,1,"Time [s]", True, False); cell(hpr+1,3, snap.get("hp_time_1","")); cell(hpr+1,4, snap.get("hp_time_2","")); cell(hpr+1,5, snap.get("hp_time_3",""))
-                cell(hpr+2,1,"Pressure [bar]", True, False)
-                cell(hpr+2,3, snap.get("hp_press_1","")); cell(hpr+2,4, snap.get("hp_press_2",""))
-                cell(hpr+2,5, snap.get("hp_press_3","")); cell(hpr+2,6, snap.get("hp_press_4",""))
+                put(hpr,1,"Holding pressure (Pcs.2)","head")
+                put(hpr+1,1,"Time [s]","head")
+                put(hpr+1,3, snap.get("hp_time_1","")); put(hpr+1,4, snap.get("hp_time_2","")); put(hpr+1,5, snap.get("hp_time_3",""))
+                put(hpr+2,1,"Pressure [bar]","head")
+                put(hpr+2,3, snap.get("hp_press_1","")); put(hpr+2,4, snap.get("hp_press_2",""))
+                put(hpr+2,5, snap.get("hp_press_3","")); put(hpr+2,6, snap.get("hp_press_4",""))
 
                 # Temperatures
                 tr = hpr + 4
                 ws.merge_cells(start_row=tr, start_column=1, end_row=tr, end_column=14)
-                cell(tr,1,"Temperatures", bold=True, center=False)
-                cell(tr+1,1,"Cylinder temp. [°C]", True, False)
+                put(tr,1,"Temperatures","head")
+                put(tr+1,1,"Cylinder temp. [°C]","head")
                 for i,k in enumerate(["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], start=2):
-                    cell(tr+1,i, snap.get(k,""))
-                cell(tr+2,1,"Tolerances [°C]", True, False)
+                    put(tr+1,i, snap.get(k,""))
+                put(tr+2,1,"Tolerances [°C]","head")
                 for i,k in enumerate(["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"], start=2):
-                    cell(tr+2,i, snap.get(k,""))
-                cell(tr+3,1,"Feed yoke temperature [°C]", True, False); cell(tr+3,2, snap.get("feed_yoke_temp",""))
-                cell(tr+4,1,"Lower enable tol. [°C]", True, False); cell(tr+4,2, snap.get("lower_enable_tol",""))
-                cell(tr+4,8,"Upper switch-off tol. [°C]", True, False); cell(tr+4,9, snap.get("upper_switch_off_tol",""))
+                    put(tr+2,i, snap.get(k,""))
+                put(tr+3,1,"Feed yoke temperature [°C]","head"); put(tr+3,2, snap.get("feed_yoke_temp",""))
+                put(tr+4,1,"Lower enable tol. [°C]","head");     put(tr+4,2, snap.get("lower_enable_tol",""))
+                put(tr+4,8,"Upper switch-off tol. [°C]","head");  put(tr+4,9, snap.get("upper_switch_off_tol",""))
 
-                # Mould movements Opening
+                # Opening
                 mor = tr + 6
                 ws.merge_cells(start_row=mor, start_column=1, end_row=mor, end_column=7)
-                cell(mor,1,"Mould movements — Opening (St.1 / St.2 / St.3)", bold=True, center=False)
-                cell(mor+1,1,"End of stage [mm]", True, False)
-                cell(mor+1,3, snap.get("open_end_mm_1","")); cell(mor+1,4, snap.get("open_end_mm_2","")); cell(mor+1,5, snap.get("open_end_mm_3",""))
-                cell(mor+2,1,"Speed [mm/s]", True, False)
-                cell(mor+2,3, snap.get("open_speed_1","")); cell(mor+2,4, snap.get("open_speed_2","")); cell(mor+2,5, snap.get("open_speed_3",""))
-                cell(mor+3,1,"Force [kN]", True, False)
-                cell(mor+3,3, snap.get("open_force_1","")); cell(mor+3,4, snap.get("open_force_2","")); cell(mor+3,5, snap.get("open_force_3",""))
+                put(mor,1,"Mould movements — Opening (St.1 / St.2 / St.3)","head")
+                put(mor+1,1,"End of stage [mm]","head")
+                put(mor+1,3, snap.get("open_end_mm_1","")); put(mor+1,4, snap.get("open_end_mm_2","")); put(mor+1,5, snap.get("open_end_mm_3",""))
+                put(mor+2,1,"Speed [mm/s]","head")
+                put(mor+2,3, snap.get("open_speed_1","")); put(mor+2,4, snap.get("open_speed_2","")); put(mor+2,5, snap.get("open_speed_3",""))
+                put(mor+3,1,"Force [kN]","head")
+                put(mor+3,3, snap.get("open_force_1","")); put(mor+3,4, snap.get("open_force_2","")); put(mor+3,5, snap.get("open_force_3",""))
 
                 # Closing
                 mcr = mor + 5
                 ws.merge_cells(start_row=mcr, start_column=8, end_row=mcr, end_column=14)
-                cell(mcr,8,"Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", bold=True, center=False)
-                cell(mcr+1,8,"End of stage [mm]", True, False)
+                put(mcr,8,"Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)","head")
+                put(mcr+1,8,"End of stage [mm]","head")
                 for i,k in enumerate(["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], start=9):
-                    cell(mcr+1,i, snap.get(k,""))
-                cell(mcr+2,8,"Speed [mm/s]", True, False)
+                    put(mcr+1,i, snap.get(k,""))
+                put(mcr+2,8,"Speed [mm/s]","head")
                 for i,k in enumerate(["close_speed_1","close_speed_2","close_speed_3","close_speed_4"], start=9):
-                    cell(mcr+2,i, snap.get(k,""))
-                cell(mcr+3,8,"Force [kN]", True, False)
+                    put(mcr+2,i, snap.get(k,""))
+                put(mcr+3,8,"Force [kN]","head")
                 for i,k in enumerate(["close_force_1","close_force_2","close_force_3"], start=9):
-                    cell(mcr+3,i, snap.get(k,""))
+                    put(mcr+3,i, snap.get(k,""))
 
                 # Clamping
                 cl = mcr + 5
                 ws.merge_cells(start_row=cl, start_column=1, end_row=cl, end_column=5)
-                cell(cl,1,"Clamping", bold=True, center=False)
-                cell(cl+1,1,"Mould closed [kN]", True, False); ws.merge_cells(cl+1,3,cl+1,5)
-                cell(cl+1,3, snap.get("mould_closed_kn",""))
+                put(cl,1,"Clamping","head")
+                put(cl+1,1,"Mould closed [kN]","head"); ws.merge_cells(cl+1,3,cl+1,5)
+                put(cl+1,3, snap.get("mould_closed_kn",""))
+
+                # Navegación
+                ws.freeze_panes = "A6"
 
                 wb.save(path)
                 messagebox.showinfo("Exportar Excel","Archivo generado correctamente.")
@@ -867,74 +906,102 @@ class MachineRecipesView(ctk.CTkFrame):
 
         def export_pdf():
             sel = tree.selection()
-            if not sel: return
+            if not sel:
+                return
             ver = tree.item(sel[0], "values")[0]
             path = filedialog.asksaveasfilename(defaultextension=".pdf",
                                                 filetypes=[("PDF", "*.pdf")],
                                                 initialfile=f"{self.current_mold}_{ver}.pdf")
-            if not path: return
+            if not path:
+                return
             try:
-                # Prefer reportlab
                 from reportlab.lib.pagesizes import A4, landscape
                 from reportlab.pdfgen import canvas
-                from reportlab.lib import colors
                 from reportlab.lib.units import mm
                 from reportlab.lib.utils import ImageReader
 
                 snap = dict(last_snap); _ = snap.pop("_meta", {})
-                c = canvas.Canvas(path, pagesize=landscape(A4))
                 W, H = landscape(A4)
                 margin = 12*mm
-                x, y = margin, H - margin
+                col_gap = 12*mm
+                col_w = (W - margin*2 - col_gap) / 2.0
+                row_h = 9*mm
 
-                def draw_text(tx, ty, txt, size=10, bold=False):
-                    c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
-                    c.drawString(tx, ty, _ascii(txt))
+                c = canvas.Canvas(path, pagesize=landscape(A4))
 
-                def box(x0,y0,w,h, label=None, value=None, bold=False, center=False):
-                    c.rect(x0,y0,w,h, stroke=1, fill=0)
-                    if label is not None:
-                        draw_text(x0+2, y0+h-12, label, 9, True)
-                    if value is not None:
+                def new_page():
+                    c.showPage()
+                    return W, H, margin, H - margin
+
+                def draw_head(txt):
+                    c.setFont("Helvetica-Bold", 12)
+                    c.drawString(x, y, _safe_pdf(txt))
+
+                def draw_box(lbl, val, w, h=row_h, center=False):
+                    c.rect(x, y - h, w, h, stroke=1, fill=0)
+                    c.setFont("Helvetica-Bold", 9)
+                    c.drawString(x+2, y - 12, _safe_pdf(lbl))
+                    if val is not None:
+                        c.setFont("Helvetica", 10)
                         if center:
-                            c.drawCentredString(x0+w/2, y0+h/2-3, _ascii(value))
+                            c.drawCentredString(x + w/2, y - h/2 - 3, _safe_pdf(val))
                         else:
-                            draw_text(x0+2, y0+4, value, 10, bold)
+                            c.drawString(x+2, y - h + 4, _safe_pdf(val))
 
-                # logo opcional
+                def advance(h=row_h+4):
+                    nonlocal y, x, col
+                    y -= h
+                    if y < margin + row_h*4:
+                        if col == 0:
+                            col = 1; x = margin + col_w + col_gap; y = H - margin - 24
+                        else:
+                            col = 0; x = margin
+                            _, _, _, y0 = new_page(); y = y0 - 24
+                        # logo + título por página
+                        if os.path.exists(logo_path):
+                            try:
+                                img = ImageReader(logo_path)
+                                c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
+                                            preserveAspectRatio=True, mask='auto')
+                            except Exception:
+                                pass
+                        c.setFont("Helvetica-Bold", 14)
+                        c.drawString(margin, H - margin - 8, _safe_pdf("Parameter overview"))
+
+                # logo + título primera página
                 logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
                 if os.path.exists(logo_path):
                     try:
                         img = ImageReader(logo_path)
-                        c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm, preserveAspectRatio=True, mask='auto')
-                    except Exception: pass
+                        c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm,
+                                    preserveAspectRatio=True, mask='auto')
+                    except Exception:
+                        pass
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(margin, H - margin - 8, _safe_pdf("Parameter overview"))
 
-                # Title
-                draw_text(x, y-10, "Parameter overview", 14, True)
-                y -= 20
+                x, y = margin, H - margin - 24
+                col = 0
 
-                # Header grid
-                rw = 8*mm; rh = 10*mm; colw = 30*mm
-                # fila 1
-                box(x, y- rh, colw, rh, "Program", snap.get("program",""))
-                box(x+colw, y- rh, colw*2, rh, "Date of entry:", snap.get("date_of_entry",""))
-                box(x+colw*3, y- rh, colw, rh, "Cavities", snap.get("cavities",""))
-                # fila 2
-                y -= rh
-                box(x, y- rh, colw, rh, "Mould desig.", snap.get("mould_desig",""))
-                box(x+colw, y- rh, colw, rh, "Machine", snap.get("machine",""))
-                box(x+colw*2, y- rh, colw, rh, "Material", snap.get("material",""))
-                y -= rh + 6
+                # Cabecera
+                draw_box("Program", snap.get("program",""), w=40*mm); advance()
+                draw_box("Date of entry:", snap.get("date_of_entry",""), w=60*mm); advance()
+                draw_box("Cavities", snap.get("cavities",""), w=30*mm); advance()
+                draw_box("Mould desig.", snap.get("mould_desig",""), w=40*mm); advance()
+                draw_box("Machine", snap.get("machine",""), w=40*mm); advance()
+                draw_box("Material", snap.get("material",""), w=40*mm); advance(h=10)
 
                 # Injection unit
-                draw_text(x, y-10, "Injection unit", 12, True)
-                y -= 12
-                box(x, y- rh, colw, rh, "Screw Ø [mm]", snap.get("screw_d_mm",""))
-                box(x+colw, y- rh, colw, rh, "Pcs. 1", snap.get("pcs_1",""))
-                # Key data (a la derecha)
-                kd_x = x + colw*2 + 10*mm
-                draw_text(kd_x, y-10, "Key data", 12, True)
-                y_kd = y-12
+                draw_head("Injection unit"); advance(h=12)
+                draw_box("Screw Ø [mm]", snap.get("screw_d_mm",""), w=35*mm); advance()
+                draw_box("Pcs. 1", snap.get("pcs_1",""), w=25*mm); advance(h=14)
+
+                # Forzar salto para Key data si falta espacio
+                if y < margin + row_h*18 and col == 0:
+                    col = 1; x = margin + col_w + col_gap; y = H - margin - 24
+
+                # Key data
+                draw_head("Key data"); advance(h=12)
                 kd = [
                     ("Cycle time [s]", "cycle_time_s"),
                     ("Injection time [s]", "injection_time_s"),
@@ -951,86 +1018,97 @@ class MachineRecipesView(ctk.CTkFrame):
                     ("Material cushion [ccm]", "material_cushion_ccm"),
                     ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
                 ]
-                for i,(lab,fid) in enumerate(kd):
-                    box(kd_x, y_kd - rh*(i+1), 50*mm, rh, lab, snap.get(fid,""))
+                for lab, fid in kd:
+                    draw_box(lab, snap.get(fid,""), w=col_w); advance()
 
-                y -= rh + 20
+                # Volver a primera col si conviene
+                col = 0; x = margin; y = y if y > H/2 else H - margin - 24
 
-                # Injection table
-                draw_text(x, y-10, "Injection", 12, True)
-                y -= 12
-                def triple_row(lbl, a,b,c, row):
-                    yy = y - rh*row
-                    box(x, yy-rh, 50*mm, rh, lbl, "")
-                    box(x+50*mm, yy-rh, 20*mm, rh, None, a, center=True)
-                    box(x+70*mm, yy-rh, 20*mm, rh, None, b, center=True)
-                    box(x+90*mm, yy-rh, 20*mm, rh, None, c, center=True)
-                triple_row("Injection press. limiting [bar]", snap.get("inj_press_lim_1",""), snap.get("inj_press_lim_2",""), snap.get("inj_press_lim_3",""), 0)
-                triple_row("Injection speed [mm/s]",          snap.get("inj_speed_1",""),     snap.get("inj_speed_2",""),     snap.get("inj_speed_3",""),     1)
-                triple_row("End of stage [mm]",               snap.get("inj_end_stage_mm_1",""), snap.get("inj_end_stage_mm_2",""), snap.get("inj_end_stage_mm_3",""), 2)
-                triple_row("Injection flow [ccm/s]",          snap.get("inj_flow_1",""),     snap.get("inj_flow_2",""),     snap.get("inj_flow_3",""),     3)
-                triple_row("End of stage [ccm]",              snap.get("inj_end_stage_ccm_1",""), snap.get("inj_end_stage_ccm_2",""), snap.get("inj_end_stage_ccm_3",""), 4)
-                y -= rh*5 + 16
+                # Injection (3 columnas)
+                draw_head("Injection"); advance(h=12)
+                def triple(lbl, a,b,c):
+                    wlbl = 65*mm; wcell = (col_w - wlbl)/3.0
+                    draw_box(lbl, None, w=wlbl)
+                    c.rect(x+wlbl, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(a,"")))
+                    c.rect(x+wlbl+wcell, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell*1.5, y - row_h/2 - 3, _safe_pdf(snap.get(b,"")))
+                    c.rect(x+wlbl+wcell*2, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell*2.5, y - row_h/2 - 3, _safe_pdf(snap.get(c,"")))
+                    advance()
+                triple("Injection press. limiting [bar]", "inj_press_lim_1","inj_press_lim_2","inj_press_lim_3")
+                triple("Injection speed [mm/s]",          "inj_speed_1","inj_speed_2","inj_speed_3")
+                triple("End of stage [mm]",               "inj_end_stage_mm_1","inj_end_stage_mm_2","inj_end_stage_mm_3")
+                triple("Injection flow [ccm/s]",          "inj_flow_1","inj_flow_2","inj_flow_3")
+                triple("End of stage [ccm]",              "inj_end_stage_ccm_1","inj_end_stage_ccm_2","inj_end_stage_ccm_3")
 
                 # Plasticizing
-                draw_text(x, y-10, "Plasticizing (St.1)", 12, True); y -= 12
-                box(x, y-rh, 50*mm, rh, "Screw speed [m/min]", snap.get("plast_screw_speed",""))
-                y -= rh
-                box(x, y-rh, 50*mm, rh, "Back pressure [bar]", snap.get("plast_back_pressure",""))
-                y -= rh
-                box(x, y-rh, 50*mm, rh, "End of stage [ccm]",  snap.get("plast_end_stage_ccm",""))
-                y -= rh + 12
+                draw_head("Plasticizing (St.1)"); advance(h=12)
+                draw_box("Screw speed [m/min]", snap.get("plast_screw_speed",""), w=col_w); advance()
+                draw_box("Back pressure [bar]", snap.get("plast_back_pressure",""), w=col_w); advance()
+                draw_box("End of stage [ccm]",  snap.get("plast_end_stage_ccm",""), w=col_w); advance(h=10)
 
                 # Holding pressure
-                draw_text(x, y-10, "Holding pressure (Pcs.2)", 12, True); y -= 12
-                box(x, y-rh, 50*mm, rh, "Time [s]", "")
-                box(x+50*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_1",""), center=True)
-                box(x+70*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_2",""), center=True)
-                box(x+90*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_3",""), center=True)
-                y -= rh
-                box(x, y-rh, 50*mm, rh, "Pressure [bar]", "")
-                for i,k in enumerate(["hp_press_1","hp_press_2","hp_press_3","hp_press_4"]):
-                    box(x+50*mm+i*20*mm, y-rh, 20*mm, rh, None, snap.get(k,""), center=True)
-                y -= rh + 12
+                draw_head("Holding pressure (Pcs.2)"); advance(h=12)
+                triple("Time [s]", "hp_time_1","hp_time_2","hp_time_3")
+                # presión (4 columnas)
+                wlbl = 65*mm; wcell = (col_w - wlbl)/4.0
+                draw_box("Pressure [bar]", None, w=wlbl)
+                keys = ["hp_press_1","hp_press_2","hp_press_3","hp_press_4"]
+                for i,k in enumerate(keys):
+                    cx = x + wlbl + i*wcell
+                    c.rect(cx, y - row_h, wcell, row_h, 1, 0)
+                    c.drawCentredString(cx + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(k,"")))
+                advance(h=row_h+4)
 
                 # Temperatures
-                draw_text(x, y-10, "Temperatures", 12, True); y -= 12
-                def five_row(lbl, keys, row):
-                    yy = y - rh*row
-                    box(x, yy-rh, 50*mm, rh, lbl, "")
+                draw_head("Temperatures"); advance(h=12)
+                def five(lbl, keys):
+                    wlbl = 65*mm; wcell = (col_w - wlbl)/5.0
+                    draw_box(lbl, None, w=wlbl)
                     for i,k in enumerate(keys):
-                        box(x+50*mm+i*20*mm, yy-rh, 20*mm, rh, None, snap.get(k,""), center=True)
-                five_row("Cylinder temp. [°C]", ["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], 0)
-                five_row("Tolerances [°C]",     ["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"], 1)
-                y -= rh*2
-                box(x, y-rh, 50*mm, rh, "Feed yoke temperature [°C]", snap.get("feed_yoke_temp",""))
-                y -= rh
-                box(x, y-rh, 50*mm, rh, "Lower enable tol. [°C]",     snap.get("lower_enable_tol",""))
-                box(x+70*mm, y-rh, 60*mm, rh, "Upper switch-off tol. [°C]", snap.get("upper_switch_off_tol",""))
-                y -= rh + 12
+                        cx = x + wlbl + i*wcell
+                        c.rect(cx, y - row_h, wcell, row_h, 1, 0)
+                        c.drawCentredString(cx + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(k,"")))
+                    advance()
+                five("Cylinder temp. [°C]", ["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"])
+                five("Tolerances [°C]",     ["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"])
+                draw_box("Feed yoke temperature [°C]", snap.get("feed_yoke_temp",""), w=col_w); advance()
+                # doble columna en fila
+                whalf = (col_w - 4*mm)/2
+                draw_box("Lower enable tol. [°C]", snap.get("lower_enable_tol",""), w=whalf)
+                c.rect(x+whalf+4*mm, y - row_h, whalf, row_h, 1, 0)
+                c.setFont("Helvetica-Bold", 9); c.drawString(x+whalf+4*mm+2, y - 12, _safe_pdf("Upper switch-off tol. [°C]"))
+                c.setFont("Helvetica", 10); c.drawString(x+whalf+4*mm+2, y - row_h + 4, _safe_pdf(snap.get("upper_switch_off_tol","")))
+                advance(h=row_h+6)
 
-                # Movements Opening
-                draw_text(x, y-10, "Mould movements — Opening (St.1 / St.2 / St.3)", 12, True); y -= 12
-                triple_row("End of stage [mm]", snap.get("open_end_mm_1",""), snap.get("open_end_mm_2",""), snap.get("open_end_mm_3",""), 0)
-                triple_row("Speed [mm/s]",      snap.get("open_speed_1",""),  snap.get("open_speed_2",""),  snap.get("open_speed_3",""),  1)
-                triple_row("Force [kN]",        snap.get("open_force_1",""),  snap.get("open_force_2",""),  snap.get("open_force_3",""),  2)
-                y -= rh*3 + 12
+                # Opening
+                draw_head("Mould movements — Opening (St.1 / St.2 / St.3)"); advance(h=12)
+                triple("End of stage [mm]", "open_end_mm_1","open_end_mm_2","open_end_mm_3")
+                triple("Speed [mm/s]",      "open_speed_1","open_speed_2","open_speed_3")
+                triple("Force [kN]",        "open_force_1","open_force_2","open_force_3")
 
-                # Movements Closing
-                draw_text(x, y-10, "Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", 12, True); y -= 12
-                def quad_row(lbl, keys, row):
-                    yy = y - rh*row
-                    box(x, yy-rh, 50*mm, rh, lbl, "")
+                # Closing
+                draw_head("Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)"); advance(h=12)
+                def quad(lbl, keys):
+                    wlbl = 65*mm; wcell = (col_w - wlbl)/4.0
+                    draw_box(lbl, None, w=wlbl)
                     for i,k in enumerate(keys):
-                        box(x+50*mm+i*20*mm, yy-rh, 20*mm, rh, None, snap.get(k,""), center=True)
-                quad_row("End of stage [mm]", ["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], 0)
-                quad_row("Speed [mm/s]",      ["close_speed_1","close_speed_2","close_speed_3","close_speed_4"],   1)
-                quad_row("Force [kN]",        ["close_force_1","close_force_2","close_force_3"],                    2)
-                y -= rh*3 + 12
+                        cx = x + wlbl + i*wcell
+                        c.rect(cx, y - row_h, wcell, row_h, 1, 0)
+                        c.drawCentredString(cx + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(k,"")))
+                    advance()
+                quad("End of stage [mm]", ["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"])
+                quad("Speed [mm/s]",      ["close_speed_1","close_speed_2","close_speed_3","close_speed_4"])
+                # 3 columnas para force
+                wlbl = 65*mm; wcell = (col_w - wlbl)/4.0
+                draw_box("Force [kN]", None, w=wlbl)
+                for i,k in enumerate(["close_force_1","close_force_2","close_force_3"]):
+                    cx = x + wlbl + i*wcell
+                    c.rect(cx, y - row_h, wcell, row_h, 1, 0)
+                    c.drawCentredString(cx + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(k,"")))
+                advance()
 
                 # Clamping
-                draw_text(x, y-10, "Clamping", 12, True); y -= 12
-                box(x, y-rh, 50*mm, rh, "Mould closed [kN]", snap.get("mould_closed_kn",""))
+                draw_head("Clamping"); advance(h=12)
+                draw_box("Mould closed [kN]", snap.get("mould_closed_kn",""), w=col_w); advance()
 
                 c.showPage(); c.save()
                 messagebox.showinfo("Exportar PDF","Archivo PDF generado correctamente.")
