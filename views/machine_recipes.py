@@ -728,6 +728,8 @@ class MachineRecipesView(ctk.CTkFrame):
             if not sel:
                 return
             ver = tree.item(sel[0], "values")[0]
+            ver_label = f"V.{ver[1:]}" if str(ver).lower().startswith("v") else str(ver)
+            title_txt = f"Receta {ver_label}"
             path = filedialog.asksaveasfilename(defaultextension=".xlsx",
                                                 filetypes=[("Excel", "*.xlsx")],
                                                 initialfile=f"{self.current_mold}_{ver}.xlsx")
@@ -739,7 +741,7 @@ class MachineRecipesView(ctk.CTkFrame):
                 from openpyxl.drawing.image import Image as XLImage
 
                 snap = dict(last_snap); _ = snap.pop("_meta", {})
-                wb = Workbook(); ws = wb.active; ws.title = "Recipe"
+                wb = Workbook(); ws = wb.active; ws.title = ver_label
 
                 # Estilos
                 thin = Side(style="thin", color="000000")
@@ -755,7 +757,7 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 val = NamedStyle(name="val")
                 val.font = Font(bold=False)
-                val.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                val.alignment = Alignment(horizontal="center", vertical="center")
                 val.border = border
                 if "val" not in wb.named_styles:
                     wb.add_named_style(val)
@@ -795,7 +797,7 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Título + Cabecera
                 ws.row_dimensions[1].height = 28
-                mput(1, 1, 1, 14, "Parameter overview", "title")
+                mput(1, 1, 1, 14, title_txt, "title")
                 put(2, 1, "Program", "head");        mput(2, 2, 2, 5,  snap.get("program", ""))
                 put(2, 6, "Date of entry:", "head"); mput(2, 7, 2, 14, snap.get("date_of_entry", ""))
                 put(3, 1, "Mould desig.", "head");   mput(3, 2, 3, 5,  snap.get("mould_desig", ""))
@@ -922,6 +924,8 @@ class MachineRecipesView(ctk.CTkFrame):
             if not sel:
                 return
             ver = tree.item(sel[0], "values")[0]
+            ver_label = f"V.{ver[1:]}" if str(ver).lower().startswith("v") else str(ver)
+            title_txt = f"Receta {ver_label}"
             path = filedialog.asksaveasfilename(defaultextension=".pdf",
                                                 filetypes=[("PDF", "*.pdf")],
                                                 initialfile=f"{self.current_mold}_{ver}.pdf")
@@ -988,7 +992,7 @@ class MachineRecipesView(ctk.CTkFrame):
                             except Exception:
                                 pass
                         c.setFont("Helvetica-Bold", 14)
-                        c.drawString(margin, H - margin - 8, _safe_pdf("Parameter overview"))
+                        c.drawString(margin, H - margin - 8, _safe_pdf(title_txt))
 
                 # logo + título primera página
                 if logo_path:
@@ -999,7 +1003,7 @@ class MachineRecipesView(ctk.CTkFrame):
                     except Exception:
                         pass
                 c.setFont("Helvetica-Bold", 14)
-                c.drawString(margin, H - margin - 8, _safe_pdf("Parameter overview"))
+                c.drawString(margin, H - margin - 8, _safe_pdf(title_txt))
 
                 x, y = margin, H - margin - 24
                 col = 0
