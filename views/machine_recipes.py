@@ -814,7 +814,9 @@ class MachineRecipesView(ctk.CTkFrame):
                 ]
                 rr = start
                 for label, fid in kd:
-                    put(rr,8,label,"head"); ws.merge_cells(rr,9,rr,14); put(rr,9, snap.get(fid,""))
+                    put(rr,8,label,"head")
+                    ws.merge_cells(start_row=rr, start_column=9, end_row=rr, end_column=14)
+                    put(rr,9, snap.get(fid,""))
                     rr += 1
 
                 # Injection (A..G)
@@ -836,9 +838,15 @@ class MachineRecipesView(ctk.CTkFrame):
                 plr = rr + 1
                 ws.merge_cells(start_row=plr, start_column=1, end_row=plr, end_column=7)
                 put(plr,1,"Plasticizing (St.1)","head")
-                put(plr+1,1,"Screw speed [m/min]","head"); ws.merge_cells(plr+1,3,plr+1,5); put(plr+1,3, snap.get("plast_screw_speed",""))
-                put(plr+2,1,"Back pressure [bar]","head"); ws.merge_cells(plr+2,3,plr+2,5); put(plr+2,3, snap.get("plast_back_pressure",""))
-                put(plr+3,1,"End of stage [ccm]","head");  ws.merge_cells(plr+3,3,plr+3,5); put(plr+3,3, snap.get("plast_end_stage_ccm",""))
+                put(plr+1,1,"Screw speed [m/min]","head")
+                ws.merge_cells(start_row=plr+1, start_column=3, end_row=plr+1, end_column=5)
+                put(plr+1,3, snap.get("plast_screw_speed",""))
+                put(plr+2,1,"Back pressure [bar]","head")
+                ws.merge_cells(start_row=plr+2, start_column=3, end_row=plr+2, end_column=5)
+                put(plr+2,3, snap.get("plast_back_pressure",""))
+                put(plr+3,1,"End of stage [ccm]","head")
+                ws.merge_cells(start_row=plr+3, start_column=3, end_row=plr+3, end_column=5)
+                put(plr+3,3, snap.get("plast_end_stage_ccm",""))
 
                 # Holding pressure
                 hpr = plr + 5
@@ -893,7 +901,8 @@ class MachineRecipesView(ctk.CTkFrame):
                 cl = mcr + 5
                 ws.merge_cells(start_row=cl, start_column=1, end_row=cl, end_column=5)
                 put(cl,1,"Clamping","head")
-                put(cl+1,1,"Mould closed [kN]","head"); ws.merge_cells(cl+1,3,cl+1,5)
+                put(cl+1,1,"Mould closed [kN]","head")
+                ws.merge_cells(start_row=cl+1, start_column=3, end_row=cl+1, end_column=5)
                 put(cl+1,3, snap.get("mould_closed_kn",""))
 
                 # Navegación
@@ -1026,12 +1035,15 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # Injection (3 columnas)
                 draw_head("Injection"); advance(h=12)
-                def triple(lbl, a,b,c):
+                def triple(lbl, k1, k2, k3):
                     wlbl = 65*mm; wcell = (col_w - wlbl)/3.0
                     draw_box(lbl, None, w=wlbl)
-                    c.rect(x+wlbl, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(a,"")))
-                    c.rect(x+wlbl+wcell, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell*1.5, y - row_h/2 - 3, _safe_pdf(snap.get(b,"")))
-                    c.rect(x+wlbl+wcell*2, y - row_h, wcell, row_h, 1, 0); c.drawCentredString(x+wlbl + wcell*2.5, y - row_h/2 - 3, _safe_pdf(snap.get(c,"")))
+                    c.rect(x+wlbl, y - row_h, wcell, row_h, 1, 0)
+                    c.drawCentredString(x+wlbl + wcell/2, y - row_h/2 - 3, _safe_pdf(snap.get(k1,"")))
+                    c.rect(x+wlbl+wcell, y - row_h, wcell, row_h, 1, 0)
+                    c.drawCentredString(x+wlbl + wcell*1.5, y - row_h/2 - 3, _safe_pdf(snap.get(k2,"")))
+                    c.rect(x+wlbl+wcell*2, y - row_h, wcell, row_h, 1, 0)
+                    c.drawCentredString(x+wlbl + wcell*2.5, y - row_h/2 - 3, _safe_pdf(snap.get(k3,"")))
                     advance()
                 triple("Injection press. limiting [bar]", "inj_press_lim_1","inj_press_lim_2","inj_press_lim_3")
                 triple("Injection speed [mm/s]",          "inj_speed_1","inj_speed_2","inj_speed_3")
