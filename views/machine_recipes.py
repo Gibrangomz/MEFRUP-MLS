@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
-# Recetas de Máquina (layout estilo SELOGICA) — versiones + historial mejorado
+# Recetas de Máquina (layout estilo SELOGICA) — versiones + historial con grilla y export
 from .base import *  # ctk, tk, ttk, messagebox, filedialog, BASE_DIR
 import os, json, csv, sys, re
 from datetime import datetime
 
+# ---------- Paths ----------
 RECIPES_DIR = os.path.join(BASE_DIR, "machine_recipes")
 HISTORY_CSV = os.path.join(RECIPES_DIR, "_history.csv")
 os.makedirs(RECIPES_DIR, exist_ok=True)
 
 DATA_SCHEMA_VERSION = 2
 
+# ---------- Excel helpers ----------
 EXCEL_MAP = {
     "program": "B3", "mould_desig": "B4", "material": "B5",
     "date_of_entry": "E3", "cavities": "E4", "machine": "E5",
@@ -45,7 +47,7 @@ NUM_FIELDS = {
     "mould_closed_kn",
 }
 
-# --------- Helpers de disco ----------
+# ---------- FS helpers ----------
 def _safe_id(s: str) -> str:
     return str(s).replace("/", "_").replace("\\", "_").strip()
 
@@ -58,7 +60,6 @@ def _versions_dir(mold_id: str) -> str:
     return d
 
 def _list_versions(mold_id: str):
-    """Devuelve lista de (version_str, path) ordenada ascendente."""
     d = _versions_dir(mold_id)
     items = []
     rx = re.compile(r"^v(\d{3})\.json$")
@@ -71,11 +72,9 @@ def _list_versions(mold_id: str):
 
 def _next_version_name(mold_id: str) -> str:
     items = _list_versions(mold_id)
-    if not items:
-        return "v001"
-    last = items[-1][0]  # "vXYZ"
-    n = int(last[1:])
-    return f"v{n+1:03d}"
+    if not items: return "v001"
+    last = items[-1][0]
+    return f"v{int(last[1:])+1:03d}"
 
 def _load_json(mold_id: str) -> dict:
     p = _path_json(mold_id)
@@ -97,7 +96,6 @@ def _save_json(mold_id: str, data: dict):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 def _save_version_snapshot(mold_id: str, data: dict, usuario: str, motivo: str, diffs_text: str) -> str:
-    """Guarda snapshot como vNNN.json (incluye meta, usuario, motivo y diffs). Devuelve el nombre de versión."""
     ver = _next_version_name(mold_id)
     snap = dict(data)
     snap["_meta"] = {
@@ -115,8 +113,7 @@ def _save_version_snapshot(mold_id: str, data: dict, usuario: str, motivo: str, 
 
 def _load_version_snapshot(mold_id: str, version: str) -> dict:
     path = os.path.join(_versions_dir(mold_id), f"{version}.json")
-    if not os.path.exists(path):
-        return {}
+    if not os.path.exists(path): return {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -130,8 +127,13 @@ def _cast_numeric(val: str) -> str:
     except Exception:
         return str(val).strip()
 
+def _ascii(s: str) -> str:
+    """Evita errores latin-1 al exportar PDFs en algunos backends."""
+    if s is None: return ""
+    return (str(s).replace("\u2014","-").encode("latin-1","replace").decode("latin-1"))
+
 # ============================================================
-#                         VIEW
+#                          VIEW
 # ============================================================
 class MachineRecipesView(ctk.CTkFrame):
     """Panel de recetas de máquina con layout SELOGICA + historial/versiones."""
@@ -145,10 +147,9 @@ class MachineRecipesView(ctk.CTkFrame):
         self._preview_version = None
         self._status_var = tk.StringVar(value="")
         self._motivo_ph = (
-            "Formato sugerido: [Qué cambiaste] → [Por qué] → [Resultado esperado].\n"
-            "Ej.: Aumenté HP de 60→70 bar para mejorar compacción; espero eliminar porosidad en esquina A."
+            "Formato sugerido: [Qué cambiaste] -> [Por qué] -> [Resultado esperado].\n"
+            "Ej.: Aumenté HP de 60->70 bar para mejorar compacción; espero eliminar porosidad en esquina A."
         )
-
         self._build()
 
     # --------------------------- UI ---------------------------
@@ -156,7 +157,6 @@ class MachineRecipesView(ctk.CTkFrame):
         # Header
         header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#0e1117"))
         header.pack(fill="x", side="top")
-
         left = ctk.CTkFrame(header, fg_color="transparent"); left.pack(side="left", padx=16, pady=10)
         ctk.CTkButton(left, text="← Menú", width=110, corner_radius=10,
                       fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
@@ -173,42 +173,35 @@ class MachineRecipesView(ctk.CTkFrame):
         self.mold_menu = ctk.CTkOptionMenu(tools, values=opciones, variable=self.mold_var, width=260,
                                            command=lambda *_: self._on_pick_mold())
         self.mold_menu.pack(side="left", padx=(0, 8))
-
         ctk.CTkButton(tools, text="📥 Importar Excel", command=self._import_excel).pack(side="left", padx=6)
         ctk.CTkButton(tools, text="🕓 Historial / Versiones", command=self._open_history).pack(side="left", padx=6)
         ctk.CTkButton(tools, text="📂 Carpeta de recetas",
                       command=lambda: self._open_folder(RECIPES_DIR)).pack(side="left", padx=6)
 
-        # === DOCUMENTAR CAMBIO (card propia) ===
+        # === DOCUMENTAR CAMBIO ===
         doc_card = ctk.CTkFrame(self, corner_radius=12, fg_color=("white", "#111827"))
         doc_card.pack(fill="x", padx=16, pady=(10, 0))
-
         topbar = ctk.CTkFrame(doc_card, fg_color="transparent"); topbar.pack(fill="x", padx=12, pady=(10, 4))
         ctk.CTkLabel(topbar, text="Documentar cambio", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
-
         actions = ctk.CTkFrame(topbar, fg_color="transparent"); actions.pack(side="right")
         ctk.CTkButton(actions, text="💾 Guardar (Ctrl+S)", command=self._save).pack(side="left")
         ctk.CTkButton(actions, text="🗑", fg_color="#ef4444", hover_color="#dc2626", width=44,
                       command=self._clear_all).pack(side="left", padx=(8,0))
-
         body = ctk.CTkFrame(doc_card, fg_color="transparent"); body.pack(fill="both", padx=12, pady=(0, 12))
-        self.motivo_txt = ctk.CTkTextbox(body, height=110)  # grande
+        self.motivo_txt = ctk.CTkTextbox(body, height=110)
         self.motivo_txt.pack(fill="x", expand=False)
         self._init_motivo_placeholder()
-
         btns = ctk.CTkFrame(body, fg_color="transparent"); btns.pack(fill="x", pady=(6,0))
         ctk.CTkButton(btns, text="Ejemplo", width=80, command=self._insert_motivo_example).pack(side="left")
 
-        # Barra de estado
-        status_bar = ctk.CTkLabel(self, textvariable=self._status_var,
-                                  text_color=("#6b7280", "#9CA3AF"), anchor="w")
-        status_bar.pack(fill="x", padx=16, pady=(4,0))
+        # status
+        ctk.CTkLabel(self, textvariable=self._status_var,
+                     text_color=("#6b7280", "#9CA3AF"), anchor="w").pack(fill="x", padx=16, pady=(4,0))
 
-        # CONTENIDO con scroll
+        # CONTENIDO con scroll (formulario)
         self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scroll.pack(fill="both", expand=True, padx=16, pady=16)
 
-        # Hoja con dos columnas
         sheet = ctk.CTkFrame(self.scroll, corner_radius=14, fg_color=("white", "#111827"))
         sheet.pack(fill="x", padx=2, pady=2)
         sheet.grid_columnconfigure(0, weight=3)
@@ -216,17 +209,14 @@ class MachineRecipesView(ctk.CTkFrame):
 
         hdr = self._card(sheet, "Parameter overview (Cabecera)", row=0, col=0)
         self._header_grid(hdr)
-
         key = self._card(sheet, "Key data", row=0, col=1)
         self._keydata_table(key)
-
         blocks = self._card(sheet, "", row=1, col=0, col_span=2)
         self._full_left_side(blocks)
 
-        # Atajos de teclado seguros
         self._register_shortcuts_once()
 
-    # ------------- Builders de layout -------------
+    # ----- small UI builders -----
     def _card(self, parent, title, row=0, col=0, col_span=1):
         card = ctk.CTkFrame(parent, corner_radius=14, fg_color=("white", "#111827"))
         card.grid(row=row, column=col, columnspan=col_span, padx=8, pady=8, sticky="nsew")
@@ -236,9 +226,7 @@ class MachineRecipesView(ctk.CTkFrame):
         return card
 
     def _lbl(self, parent, text, **grid):
-        l = ctk.CTkLabel(parent, text=text)
-        l.grid(**grid)
-        return l
+        l = ctk.CTkLabel(parent, text=text); l.grid(**grid); return l
 
     def _ent(self, parent, fid, w=110, justify="center", **grid):
         v = self.vars.setdefault(fid, tk.StringVar())
@@ -289,7 +277,6 @@ class MachineRecipesView(ctk.CTkFrame):
     def _full_left_side(self, parent):
         ctk.CTkLabel(parent, text="Injection unit", font=ctk.CTkFont("Helvetica", 12, "bold")
                      ).pack(anchor="center", pady=(4, 0))
-
         inj_unit = ctk.CTkFrame(parent, fg_color="transparent"); inj_unit.pack(fill="x", padx=10, pady=(0, 8))
         inj_unit.grid_columnconfigure((0,1,2,3,4), weight=1)
         self._lbl(inj_unit, "Screw Ø [mm]", row=0, column=0, sticky="e", padx=6, pady=4)
@@ -344,8 +331,7 @@ class MachineRecipesView(ctk.CTkFrame):
         card = ctk.CTkFrame(parent, corner_radius=12, fg_color=("white", "#111a27"))
         card.pack(fill="x", padx=10, pady=8)
         ctk.CTkLabel(card, text=title, font=ctk.CTkFont("Helvetica", 12, "bold")).pack(anchor="w", padx=10, pady=(8, 6))
-        grid = ctk.CTkFrame(card, fg_color="transparent")
-        grid.pack(fill="x", padx=10, pady=(0, 10))
+        grid = ctk.CTkFrame(card, fg_color="transparent"); grid.pack(fill="x", padx=10, pady=(0,10))
         max_cols = max(len(cols) for _, cols in rows)
         for i in range(max_cols + 1): grid.grid_columnconfigure(i, weight=1)
         for r, (label, ids) in enumerate(rows):
@@ -353,50 +339,48 @@ class MachineRecipesView(ctk.CTkFrame):
             for c, fid in enumerate(ids, start=1):
                 self._ent(grid, fid, w=90, row=r, column=c, sticky="ew", padx=4, pady=4)
 
-    # --------------------------- Eventos / Acciones ---------------------------
+    # --------------------------- Eventos básicos ---------------------------
     def _register_shortcuts_once(self):
         root = self.winfo_toplevel()
         if getattr(root, "_recipes_shortcuts_ok", False): return
-        def _save_kb(evt):
-            self._save(); return "break"
-        root.bind("<Control-s>", _save_kb, add="+")
+        root.bind("<Control-s>", lambda e: (self._save(), "break"), add="+")
         root._recipes_shortcuts_ok = True
 
     def _init_motivo_placeholder(self):
-        self.motivo_txt.configure(text_color=("#9CA3AF", "#6b7280"))
+        # placeholder gris
+        self._motivo_placeholder_on = True
         self.motivo_txt.delete("1.0", "end")
         self.motivo_txt.insert("1.0", self._motivo_ph)
-        self.motivo_txt.unbind("<FocusIn>")
-        self.motivo_txt.unbind("<FocusOut>")
+        self.motivo_txt.configure(text_color=("#9CA3AF", "#6b7280"))
         self.motivo_txt.bind("<FocusIn>", self._motivo_focus_in)
         self.motivo_txt.bind("<FocusOut>", self._motivo_focus_out)
 
     def _motivo_focus_in(self, *_):
-        content = (self.motivo_txt.get("1.0", "end").strip())
-        if content == self._motivo_ph:
+        if self._motivo_placeholder_on:
             self.motivo_txt.delete("1.0", "end")
-            self.motivo_txt.configure(text_color=None)
+            self.motivo_txt.configure(text_color=("black", "white"))
+            self._motivo_placeholder_on = False
 
     def _motivo_focus_out(self, *_):
         content = (self.motivo_txt.get("1.0", "end").strip())
         if not content:
-            self.motivo_txt.configure(text_color=("#9CA3AF", "#6b7280"))
-            self.motivo_txt.insert("1.0", self._motivo_ph)
+            self._init_motivo_placeholder()
 
     def _get_motivo_text(self) -> str:
-        t = self.motivo_txt.get("1.0", "end").strip()
-        return "" if t == self._motivo_ph else t
+        if self._motivo_placeholder_on: return ""
+        return self.motivo_txt.get("1.0", "end").strip()
 
     def _set_motivo_text(self, text: str):
-        self.motivo_txt.configure(text_color=None)
+        self._motivo_placeholder_on = False
         self.motivo_txt.delete("1.0", "end")
         self.motivo_txt.insert("1.0", text)
+        self.motivo_txt.configure(text_color=("black", "white"))
 
     def _insert_motivo_example(self):
-        example = ("Ajusté velocidad de inyección 50→65 mm/s para mejorar llenado en nervaduras; "
+        example = ("Ajusté velocidad de inyección 50->65 mm/s para mejorar llenado en nervaduras; "
                    "espero reducir cortinas y estabilizar peso del disparo (+0.2g).")
-        cur = self.motivo_txt.get("1.0", "end").strip()
-        if not cur or cur == self._motivo_ph:
+        cur = self._get_motivo_text()
+        if not cur:
             self._set_motivo_text(example)
         else:
             if not cur.endswith("\n"):
@@ -433,8 +417,7 @@ class MachineRecipesView(ctk.CTkFrame):
         out = {}
         for k, v in self.vars.items():
             val = (v.get() or "").strip()
-            if k in NUM_FIELDS:
-                val = _cast_numeric(val)
+            if k in NUM_FIELDS: val = _cast_numeric(val)
             out[k] = val
         return out
 
@@ -461,7 +444,7 @@ class MachineRecipesView(ctk.CTkFrame):
         for k, nv in new.items():
             ov = str(old.get(k, ""))
             if (nv or "") != (ov or ""):
-                diffs.append(f"{k}: '{ov}' → '{nv}'")
+                diffs.append(f"{k}: '{ov}' -> '{nv}'")
         if not diffs:
             messagebox.showinfo("Recetas de Máquina", "No hubo cambios en los parámetros.")
             return
@@ -538,27 +521,48 @@ class MachineRecipesView(ctk.CTkFrame):
         vsb = ttk.Scrollbar(left, orient="vertical", command=tree.yview); tree.configure(yscrollcommand=vsb.set)
         tree.pack(side="left", fill="both", expand=True, padx=12, pady=12); vsb.pack(side="left", fill="y", pady=12)
 
-        # DERECHA: detalle
+        # DERECHA: detalle (grilla)
         right = ctk.CTkFrame(main, fg_color=("white", "#111827")); right.grid(row=0, column=1, sticky="nsew", padx=(8,0))
-        detail_title = ctk.CTkLabel(right, text="Detalle de versión", font=ctk.CTkFont(size=14, weight="bold"))
-        detail_title.pack(anchor="w", padx=12, pady=(12,6))
-        detail = ctk.CTkTextbox(right)
-        detail.configure(font=ctk.CTkFont(size=12))
-        detail.pack(fill="both", expand=True, padx=12, pady=(0,12))
+        header_box = ctk.CTkFrame(right, fg_color="transparent"); header_box.pack(fill="x", padx=12, pady=(12,0))
+        detail_title = ctk.CTkLabel(header_box, text="Detalle de versión", font=ctk.CTkFont(size=14, weight="bold"))
+        detail_title.pack(side="left")
 
-        btns = ctk.CTkFrame(right, fg_color="transparent"); btns.pack(fill="x", padx=12, pady=(0,12))
-        ctk.CTkButton(btns, text="Cargar esta versión (previa)",
-                      command=lambda: load_selected_into_form(preview=True)).pack(side="left")
-        ctk.CTkButton(btns, text="Restaurar esta versión (guardar como nueva)",
-                      fg_color="#0ea5e9", hover_color="#0284c7",
-                      command=lambda: load_selected_into_form(preview=False)).pack(side="left", padx=(8,0))
+        export_box = ctk.CTkFrame(header_box, fg_color="transparent"); export_box.pack(side="right")
+        btn_xlsx = ctk.CTkButton(export_box, text="⬇ Exportar Excel", state="disabled")
+        btn_pdf  = ctk.CTkButton(export_box, text="⬇ Exportar PDF", state="disabled")
+        btn_pdf.pack(side="right", padx=(8,0)); btn_xlsx.pack(side="right")
+
+        detail_wrap = ctk.CTkScrollableFrame(right, fg_color=("white","#111827"))
+        detail_wrap.pack(fill="both", expand=True, padx=12, pady=(6,12))
+
+        # placeholder de secciones
+        def clear_detail():
+            for w in detail_wrap.winfo_children():
+                w.destroy()
+
+        # ----- grilla estilo Excel por secciones -----
+        def section(title):
+            card = ctk.CTkFrame(detail_wrap, corner_radius=12, fg_color=("white", "#111a27"))
+            card.pack(fill="x", padx=6, pady=6)
+            ctk.CTkLabel(card, text=title, font=ctk.CTkFont("Helvetica", 12, "bold")).pack(anchor="w", padx=10, pady=(10,6))
+            grid = ctk.CTkFrame(card, fg_color="transparent"); grid.pack(fill="x", padx=10, pady=(0,10))
+            return grid
+
+        def row_labeled(grid, r, label, values, start_col=0):
+            ctk.CTkLabel(grid, text=label).grid(row=r, column=start_col, sticky="w", padx=4, pady=4)
+            for i, val in enumerate(values, start=1):
+                e = ctk.CTkEntry(grid, width=110, justify="center")
+                e.insert(0, str(val))
+                e.configure(state="disabled")
+                e.grid(row=r, column=start_col+i, sticky="ew", padx=4, pady=4)
+
+        # datos actuales en detalle
+        last_snap = {"_meta": {}}
 
         def load_versions():
             tree.delete(*tree.get_children())
             q = (srch_var.get() or "").lower()
-
             snaps = _list_versions(self.current_mold)
-            # Baseline automática desde JSON actual si no hay snapshots
             if not snaps:
                 current = _load_json(self.current_mold)
                 if current:
@@ -566,7 +570,6 @@ class MachineRecipesView(ctk.CTkFrame):
                     motivo = "(baseline) Estado inicial importado desde receta actual"
                     _save_version_snapshot(self.current_mold, current, usuario, motivo, "")
                     snaps = _list_versions(self.current_mold)
-
             for ver, path in snaps:
                 try:
                     with open(path, "r", encoding="utf-8") as f:
@@ -574,73 +577,475 @@ class MachineRecipesView(ctk.CTkFrame):
                 except Exception:
                     continue
                 meta = snap.get("_meta", {})
-                ts = meta.get("saved_at","")
-                usuario = meta.get("usuario","")
-                motivo = meta.get("motivo","")
-                cambios = meta.get("diffs","")
+                ts = meta.get("saved_at",""); usuario = meta.get("usuario","")
+                motivo = meta.get("motivo",""); cambios = meta.get("diffs","")
                 rowtxt = (motivo + " " + cambios).lower()
-                if q and q not in rowtxt:
-                    continue
+                if q and q not in rowtxt: continue
                 tree.insert("", "end", values=(ver, ts, usuario, motivo, cambios))
 
         def on_select(*_):
+            nonlocal last_snap
+            clear_detail()
             sel = tree.selection()
-            detail.configure(state="normal"); detail.delete("1.0","end")
             if not sel:
-                detail.insert("1.0", "Selecciona una versión para ver detalle.")
-                detail.configure(state="disabled"); return
+                detail_title.configure(text="Detalle de versión")
+                btn_xlsx.configure(state="disabled"); btn_pdf.configure(state="disabled")
+                return
             ver = tree.item(sel[0], "values")[0]
             snap = _load_version_snapshot(self.current_mold, ver)
+            last_snap = snap
             meta = snap.get("_meta", {})
-            txt = []
-            txt.append(f"Versión: {ver}")
-            txt.append(f"Fecha/Hora: {meta.get('saved_at','')}")
-            txt.append(f"Usuario: {meta.get('usuario','')}")
-            txt.append(f"Motivo:\n  {meta.get('motivo','')}")
-            diffs = meta.get("diffs","")
-            if diffs:
-                txt.append("\nCambios:")
-                for c in diffs.split(" | "):
-                    if c.strip(): txt.append(f"  • {c}")
             clean = dict(snap); clean.pop("_meta", None)
-            txt.append("\nParámetros (JSON):")
-            try:
-                txt.append(json.dumps(clean, ensure_ascii=False, indent=2))
-            except Exception:
-                txt.append(str(clean))
-            detail.insert("1.0", "\n".join(txt))
-            detail.configure(state="disabled")
+
             detail_title.configure(text=f"Detalle de versión — {ver}")
+            btn_xlsx.configure(state="normal")
+            btn_pdf.configure(state="normal")
 
-        def load_selected_into_form(preview: bool):
+            # Parameter overview
+            g = section("Parameter overview")
+            g.grid_columnconfigure((0,1,2,3,4,5), weight=1)
+            row_labeled(g, 0, "Program",      [clean.get("program",""), "Date of entry", clean.get("date_of_entry",""),
+                                               "Cavities", clean.get("cavities","")], start_col=0)
+            row_labeled(g, 1, "Mould desig.", [clean.get("mould_desig",""), "Machine", clean.get("machine",""),
+                                               "Material", clean.get("material","")], start_col=0)
+
+            # Key data
+            k = section("Key data")
+            items = [
+                ("Cycle time [s]", "cycle_time_s"),
+                ("Injection time [s]", "injection_time_s"),
+                ("Holding press. time [s]", "holding_press_time_s"),
+                ("Rem. cooling time [s]", "rem_cooling_time_s"),
+                ("Dosage time [s]", "dosage_time_s"),
+                ("Screw stroke [mm]", "screw_stroke_mm"),
+                ("Mould stroke [mm]", "mould_stroke_mm"),
+                ("Ejector stroke [mm]", "ejector_stroke_mm"),
+                ("Shot weight [g]", "shot_weight_g"),
+                ("Plasticising flow [kg/h]", "plasticising_flow_kgh"),
+                ("Dosage capacity [g/s]", "dosage_capacity_gs"),
+                ("Dosage volume [ccm]", "dosage_volume_ccm"),
+                ("Material cushion [ccm]", "material_cushion_ccm"),
+                ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
+            ]
+            k.grid_columnconfigure((0,1,2), weight=1)
+            rr = 0
+            for label, fid in items:
+                row_labeled(k, rr, label, [clean.get(fid,"")], start_col=0)
+                rr += 1
+
+            # Injection unit
+            iu = section("Injection unit")
+            iu.grid_columnconfigure((0,1,2,3), weight=1)
+            row_labeled(iu, 0, "Screw Ø [mm]", [clean.get("screw_d_mm",""), "Pcs. 1", clean.get("pcs_1","")], start_col=0)
+
+            # Injection
+            inj = section("Injection")
+            inj.grid_columnconfigure((0,1,2,3,4), weight=1)
+            row_labeled(inj, 0, "Injection press. limiting [bar]",
+                        [clean.get("inj_press_lim_1",""), clean.get("inj_press_lim_2",""), clean.get("inj_press_lim_3","")])
+            row_labeled(inj, 1, "Injection speed [mm/s]",
+                        [clean.get("inj_speed_1",""), clean.get("inj_speed_2",""), clean.get("inj_speed_3","")])
+            row_labeled(inj, 2, "End of stage [mm]",
+                        [clean.get("inj_end_stage_mm_1",""), clean.get("inj_end_stage_mm_2",""), clean.get("inj_end_stage_mm_3","")])
+            row_labeled(inj, 3, "Injection flow [ccm/s]",
+                        [clean.get("inj_flow_1",""), clean.get("inj_flow_2",""), clean.get("inj_flow_3","")])
+            row_labeled(inj, 4, "End of stage [ccm]",
+                        [clean.get("inj_end_stage_ccm_1",""), clean.get("inj_end_stage_ccm_2",""), clean.get("inj_end_stage_ccm_3","")])
+
+            # Plasticizing
+            pl = section("Plasticizing (St.1)")
+            pl.grid_columnconfigure((0,1), weight=1)
+            row_labeled(pl, 0, "Screw speed [m/min]", [clean.get("plast_screw_speed","")])
+            row_labeled(pl, 1, "Back pressure [bar]", [clean.get("plast_back_pressure","")])
+            row_labeled(pl, 2, "End of stage [ccm]", [clean.get("plast_end_stage_ccm","")])
+
+            # Holding pressure
+            hp = section("Holding pressure (Pcs.2)")
+            hp.grid_columnconfigure((0,1,2,3,4), weight=1)
+            row_labeled(hp, 0, "Time [s]",     [clean.get("hp_time_1",""), clean.get("hp_time_2",""), clean.get("hp_time_3","")])
+            row_labeled(hp, 1, "Pressure [bar]", [clean.get("hp_press_1",""), clean.get("hp_press_2",""),
+                                                  clean.get("hp_press_3",""), clean.get("hp_press_4","")])
+
+            # Temperatures
+            tp = section("Temperatures (1..5)")
+            tp.grid_columnconfigure((0,1,2,3,4,5), weight=1)
+            row_labeled(tp, 0, "Cylinder temp. [°C]", [clean.get("temp_c1",""), clean.get("temp_c2",""),
+                                                       clean.get("temp_c3",""), clean.get("temp_c4",""),
+                                                       clean.get("temp_c5","")])
+            row_labeled(tp, 1, "Tolerances [°C]", [clean.get("tol_c1",""), clean.get("tol_c2",""),
+                                                   clean.get("tol_c3",""), clean.get("tol_c4",""),
+                                                   clean.get("tol_c5","")])
+            row_labeled(tp, 2, "Feed yoke temperature [°C]", [clean.get("feed_yoke_temp","")])
+            row_labeled(tp, 3, "Lower enable tol. [°C]",     [clean.get("lower_enable_tol","")])
+            row_labeled(tp, 4, "Upper switch-off tol. [°C]", [clean.get("upper_switch_off_tol","")])
+
+            # Mould movements Opening
+            mo = section("Mould movements — Opening (St.1 / St.2 / St.3)")
+            mo.grid_columnconfigure((0,1,2,3), weight=1)
+            row_labeled(mo, 0, "End of stage [mm]", [clean.get("open_end_mm_1",""), clean.get("open_end_mm_2",""), clean.get("open_end_mm_3","")])
+            row_labeled(mo, 1, "Speed [mm/s]",      [clean.get("open_speed_1",""), clean.get("open_speed_2",""), clean.get("open_speed_3","")])
+            row_labeled(mo, 2, "Force [kN]",        [clean.get("open_force_1",""), clean.get("open_force_2",""), clean.get("open_force_3","")])
+
+            # Mould movements Closing
+            mc = section("Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)")
+            mc.grid_columnconfigure((0,1,2,3,4), weight=1)
+            row_labeled(mc, 0, "End of stage [mm]", [clean.get("close_end_mm_1",""), clean.get("close_end_mm_2",""),
+                                                     clean.get("close_end_mm_3",""), clean.get("close_end_mm_4","")])
+            row_labeled(mc, 1, "Speed [mm/s]",      [clean.get("close_speed_1",""), clean.get("close_speed_2",""),
+                                                     clean.get("close_speed_3",""), clean.get("close_speed_4","")])
+            row_labeled(mc, 2, "Force [kN]",        [clean.get("close_force_1",""), clean.get("close_force_2",""),
+                                                     clean.get("close_force_3","")])
+
+            # Clamping
+            cl = section("Clamping")
+            cl.grid_columnconfigure((0,1), weight=1)
+            row_labeled(cl, 0, "Mould closed [kN]", [clean.get("mould_closed_kn","")])
+
+        def export_excel():
             sel = tree.selection()
-            if not sel:
-                messagebox.showwarning("Historial", "Selecciona una versión."); return
+            if not sel: return
             ver = tree.item(sel[0], "values")[0]
-            snap = _load_version_snapshot(self.current_mold, ver)
-            if not snap:
-                messagebox.showerror("Historial", f"No se pudo leer {ver}."); return
-            snap_clean = dict(snap); snap_clean.pop("_meta", None)
-            for k, v in self.vars.items():
-                v.set(str(snap_clean.get(k, "")))
+            path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                filetypes=[("Excel", "*.xlsx")],
+                                                initialfile=f"{self.current_mold}_{ver}.xlsx")
+            if not path: return
+            try:
+                from openpyxl import Workbook
+                from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+                from openpyxl.drawing.image import Image as XLImage
 
-            if preview:
-                self._preview_version = ver
-                self._dirty = True
-                self._status_var.set(f"Vista previa de {ver} (no guardado). Si guardas, se creará una nueva versión.")
-                top.lift()
-                messagebox.showinfo("Vista previa", f"Se cargó {ver} en el formulario.\nAún no se ha guardado.")
-            else:
-                self._preview_version = None
-                self._dirty = True
-                auto_motivo = f"Restauración de {ver}: " + (snap.get("_meta",{}).get("motivo","") or "")
-                self._set_motivo_text(auto_motivo[:500])
-                self._save()
-                load_versions()
+                snap = dict(last_snap); meta = snap.pop("_meta", {})
+                wb = Workbook(); ws = wb.active; ws.title = "Recipe"
+                thin = Side(style="thin", color="000000")
+                border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                def cell(r, c, val="", bold=False, center=True, fill=None):
+                    x = ws.cell(row=r, column=c, value=val)
+                    x.font = Font(bold=bold)
+                    x.alignment = Alignment(horizontal=("center" if center else "left"), vertical="center")
+                    x.border = border
+                    if fill: x.fill = PatternFill("solid", start_color=fill, end_color=fill)
+                    return x
+                # ancho columnas
+                for col in range(1, 15): ws.column_dimensions[chr(64+col)].width = 14
+
+                # Logo (opcional)
+                logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
+                if os.path.exists(logo_path):
+                    try:
+                        img = XLImage(logo_path); img.height = 40; img.width = 120
+                        ws.add_image(img, "N1")
+                    except Exception: pass
+
+                # Título
+                ws.merge_cells("A1:N1"); cell(1,1,"Parameter overview", bold=True, center=False)
+
+                # Cabecera
+                cell(2,1,"Program", True, False);          ws.merge_cells("B2:E2"); cell(2,2, snap.get("program",""), False)
+                cell(2,6,"Date of entry:", True, False);   ws.merge_cells("G2:N2"); cell(2,7, snap.get("date_of_entry",""), False)
+                cell(3,1,"Mould desig.", True, False);     ws.merge_cells("B3:E3"); cell(3,2, snap.get("mould_desig",""), False)
+                cell(3,6,"Cavities", True, False);         ws.merge_cells("G3:N3"); cell(3,7, snap.get("cavities",""), False)
+                cell(4,1,"Material", True, False);         ws.merge_cells("B4:E4"); cell(4,2, snap.get("material",""), False)
+                cell(4,6,"Machine", True, False);          ws.merge_cells("G4:N4"); cell(4,7, snap.get("machine",""), False)
+
+                # Separador
+                ws.merge_cells("A5:N5"); cell(5,1,"")
+
+                # Injection unit
+                ws.merge_cells("A6:N6"); cell(6,1,"Injection unit", bold=True, center=True)
+                cell(7,4,"Screw Ø [mm]", True, False); cell(7,6, snap.get("screw_d_mm",""))
+                cell(7,7,"Pcs. 1", True, False); cell(7,8, snap.get("pcs_1",""))
+
+                # Key data block (col H..N)
+                start = 8
+                kd = [
+                    ("Cycle time [s]", "cycle_time_s"),
+                    ("Injection time [s]", "injection_time_s"),
+                    ("Holding press. time [s]", "holding_press_time_s"),
+                    ("Rem. cooling time [s]", "rem_cooling_time_s"),
+                    ("Dosage time [s]", "dosage_time_s"),
+                    ("Screw stroke [mm]", "screw_stroke_mm"),
+                    ("Mould stroke [mm]", "mould_stroke_mm"),
+                    ("Ejector stroke [mm]", "ejector_stroke_mm"),
+                    ("Shot weight [g]", "shot_weight_g"),
+                    ("Plasticising flow [kg/h]", "plasticising_flow_kgh"),
+                    ("Dosage capacity [g/s]", "dosage_capacity_gs"),
+                    ("Dosage volume [ccm]", "dosage_volume_ccm"),
+                    ("Material cushion [ccm]", "material_cushion_ccm"),
+                    ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
+                ]
+                ws.merge_cells(start_row=start-1, start_column=8, end_row=start-1, end_column=14)
+                cell(start-1, 8, "Key data", bold=True, center=True)
+                rr = start
+                for label, fid in kd:
+                    cell(rr,8,label, True, False); ws.merge_cells(rr,9,rr,14); cell(rr,9, snap.get(fid,""), False); rr += 1
+
+                # Injection table (A..G)
+                injstart = start
+                ws.merge_cells(start_row=injstart-1, start_column=1, end_row=injstart-1, end_column=7)
+                cell(injstart-1,1,"Injection", bold=True, center=False)
+                def triple(r, label, a,b,c):
+                    cell(r,1,label,True,False)
+                    cell(r,3,a); cell(r,4,b); cell(r,5,c)
+                triple(injstart+0, "Injection press. limiting [bar]",
+                       snap.get("inj_press_lim_1",""), snap.get("inj_press_lim_2",""), snap.get("inj_press_lim_3",""))
+                triple(injstart+1, "Injection speed [mm/s]",
+                       snap.get("inj_speed_1",""), snap.get("inj_speed_2",""), snap.get("inj_speed_3",""))
+                triple(injstart+2, "End of stage [mm]",
+                       snap.get("inj_end_stage_mm_1",""), snap.get("inj_end_stage_mm_2",""), snap.get("inj_end_stage_mm_3",""))
+                triple(injstart+3, "Injection flow [ccm/s]",
+                       snap.get("inj_flow_1",""), snap.get("inj_flow_2",""), snap.get("inj_flow_3",""))
+                triple(injstart+4, "End of stage [ccm]",
+                       snap.get("inj_end_stage_ccm_1",""), snap.get("inj_end_stage_ccm_2",""), snap.get("inj_end_stage_ccm_3",""))
+
+                # Plasticizing
+                plr = rr + 1
+                ws.merge_cells(start_row=plr, start_column=1, end_row=plr, end_column=7)
+                cell(plr,1,"Plasticizing (St.1)", bold=True, center=False)
+                cell(plr+1,1,"Screw speed [m/min]", True, False); ws.merge_cells(plr+1,3,plr+1,5); cell(plr+1,3, snap.get("plast_screw_speed",""))
+                cell(plr+2,1,"Back pressure [bar]", True, False); ws.merge_cells(plr+2,3,plr+2,5); cell(plr+2,3, snap.get("plast_back_pressure",""))
+                cell(plr+3,1,"End of stage [ccm]", True, False); ws.merge_cells(plr+3,3,plr+3,5); cell(plr+3,3, snap.get("plast_end_stage_ccm",""))
+
+                # Holding pressure
+                hpr = plr + 5
+                ws.merge_cells(start_row=hpr, start_column=1, end_row=hpr, end_column=7)
+                cell(hpr,1,"Holding pressure (Pcs.2)", bold=True, center=False)
+                cell(hpr+1,1,"Time [s]", True, False); cell(hpr+1,3, snap.get("hp_time_1","")); cell(hpr+1,4, snap.get("hp_time_2","")); cell(hpr+1,5, snap.get("hp_time_3",""))
+                cell(hpr+2,1,"Pressure [bar]", True, False)
+                cell(hpr+2,3, snap.get("hp_press_1","")); cell(hpr+2,4, snap.get("hp_press_2",""))
+                cell(hpr+2,5, snap.get("hp_press_3","")); cell(hpr+2,6, snap.get("hp_press_4",""))
+
+                # Temperatures
+                tr = hpr + 4
+                ws.merge_cells(start_row=tr, start_column=1, end_row=tr, end_column=14)
+                cell(tr,1,"Temperatures", bold=True, center=False)
+                cell(tr+1,1,"Cylinder temp. [°C]", True, False)
+                for i,k in enumerate(["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], start=2):
+                    cell(tr+1,i, snap.get(k,""))
+                cell(tr+2,1,"Tolerances [°C]", True, False)
+                for i,k in enumerate(["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"], start=2):
+                    cell(tr+2,i, snap.get(k,""))
+                cell(tr+3,1,"Feed yoke temperature [°C]", True, False); cell(tr+3,2, snap.get("feed_yoke_temp",""))
+                cell(tr+4,1,"Lower enable tol. [°C]", True, False); cell(tr+4,2, snap.get("lower_enable_tol",""))
+                cell(tr+4,8,"Upper switch-off tol. [°C]", True, False); cell(tr+4,9, snap.get("upper_switch_off_tol",""))
+
+                # Mould movements Opening
+                mor = tr + 6
+                ws.merge_cells(start_row=mor, start_column=1, end_row=mor, end_column=7)
+                cell(mor,1,"Mould movements — Opening (St.1 / St.2 / St.3)", bold=True, center=False)
+                cell(mor+1,1,"End of stage [mm]", True, False)
+                cell(mor+1,3, snap.get("open_end_mm_1","")); cell(mor+1,4, snap.get("open_end_mm_2","")); cell(mor+1,5, snap.get("open_end_mm_3",""))
+                cell(mor+2,1,"Speed [mm/s]", True, False)
+                cell(mor+2,3, snap.get("open_speed_1","")); cell(mor+2,4, snap.get("open_speed_2","")); cell(mor+2,5, snap.get("open_speed_3",""))
+                cell(mor+3,1,"Force [kN]", True, False)
+                cell(mor+3,3, snap.get("open_force_1","")); cell(mor+3,4, snap.get("open_force_2","")); cell(mor+3,5, snap.get("open_force_3",""))
+
+                # Closing
+                mcr = mor + 5
+                ws.merge_cells(start_row=mcr, start_column=8, end_row=mcr, end_column=14)
+                cell(mcr,8,"Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", bold=True, center=False)
+                cell(mcr+1,8,"End of stage [mm]", True, False)
+                for i,k in enumerate(["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], start=9):
+                    cell(mcr+1,i, snap.get(k,""))
+                cell(mcr+2,8,"Speed [mm/s]", True, False)
+                for i,k in enumerate(["close_speed_1","close_speed_2","close_speed_3","close_speed_4"], start=9):
+                    cell(mcr+2,i, snap.get(k,""))
+                cell(mcr+3,8,"Force [kN]", True, False)
+                for i,k in enumerate(["close_force_1","close_force_2","close_force_3"], start=9):
+                    cell(mcr+3,i, snap.get(k,""))
+
+                # Clamping
+                cl = mcr + 5
+                ws.merge_cells(start_row=cl, start_column=1, end_row=cl, end_column=5)
+                cell(cl,1,"Clamping", bold=True, center=False)
+                cell(cl+1,1,"Mould closed [kN]", True, False); ws.merge_cells(cl+1,3,cl+1,5)
+                cell(cl+1,3, snap.get("mould_closed_kn",""))
+
+                wb.save(path)
+                messagebox.showinfo("Exportar Excel","Archivo generado correctamente.")
+            except Exception as e:
+                messagebox.showerror("Exportar Excel", f"No se pudo exportar:\n{e}")
+
+        def export_pdf():
+            sel = tree.selection()
+            if not sel: return
+            ver = tree.item(sel[0], "values")[0]
+            path = filedialog.asksaveasfilename(defaultextension=".pdf",
+                                                filetypes=[("PDF", "*.pdf")],
+                                                initialfile=f"{self.current_mold}_{ver}.pdf")
+            if not path: return
+            try:
+                # Prefer reportlab
+                from reportlab.lib.pagesizes import A4, landscape
+                from reportlab.pdfgen import canvas
+                from reportlab.lib import colors
+                from reportlab.lib.units import mm
+                from reportlab.lib.utils import ImageReader
+
+                snap = dict(last_snap); _ = snap.pop("_meta", {})
+                c = canvas.Canvas(path, pagesize=landscape(A4))
+                W, H = landscape(A4)
+                margin = 12*mm
+                x, y = margin, H - margin
+
+                def draw_text(tx, ty, txt, size=10, bold=False):
+                    c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+                    c.drawString(tx, ty, _ascii(txt))
+
+                def box(x0,y0,w,h, label=None, value=None, bold=False, center=False):
+                    c.rect(x0,y0,w,h, stroke=1, fill=0)
+                    if label is not None:
+                        draw_text(x0+2, y0+h-12, label, 9, True)
+                    if value is not None:
+                        if center:
+                            c.drawCentredString(x0+w/2, y0+h/2-3, _ascii(value))
+                        else:
+                            draw_text(x0+2, y0+4, value, 10, bold)
+
+                # logo opcional
+                logo_path = os.path.join(BASE_DIR, "mefrup_logo.png")
+                if os.path.exists(logo_path):
+                    try:
+                        img = ImageReader(logo_path)
+                        c.drawImage(img, W-60*mm, H-18*mm, width=50*mm, height=12*mm, preserveAspectRatio=True, mask='auto')
+                    except Exception: pass
+
+                # Title
+                draw_text(x, y-10, "Parameter overview", 14, True)
+                y -= 20
+
+                # Header grid
+                rw = 8*mm; rh = 10*mm; colw = 30*mm
+                # fila 1
+                box(x, y- rh, colw, rh, "Program", snap.get("program",""))
+                box(x+colw, y- rh, colw*2, rh, "Date of entry:", snap.get("date_of_entry",""))
+                box(x+colw*3, y- rh, colw, rh, "Cavities", snap.get("cavities",""))
+                # fila 2
+                y -= rh
+                box(x, y- rh, colw, rh, "Mould desig.", snap.get("mould_desig",""))
+                box(x+colw, y- rh, colw, rh, "Machine", snap.get("machine",""))
+                box(x+colw*2, y- rh, colw, rh, "Material", snap.get("material",""))
+                y -= rh + 6
+
+                # Injection unit
+                draw_text(x, y-10, "Injection unit", 12, True)
+                y -= 12
+                box(x, y- rh, colw, rh, "Screw Ø [mm]", snap.get("screw_d_mm",""))
+                box(x+colw, y- rh, colw, rh, "Pcs. 1", snap.get("pcs_1",""))
+                # Key data (a la derecha)
+                kd_x = x + colw*2 + 10*mm
+                draw_text(kd_x, y-10, "Key data", 12, True)
+                y_kd = y-12
+                kd = [
+                    ("Cycle time [s]", "cycle_time_s"),
+                    ("Injection time [s]", "injection_time_s"),
+                    ("Holding press. time [s]", "holding_press_time_s"),
+                    ("Rem. cooling time [s]", "rem_cooling_time_s"),
+                    ("Dosage time [s]", "dosage_time_s"),
+                    ("Screw stroke [mm]", "screw_stroke_mm"),
+                    ("Mould stroke [mm]", "mould_stroke_mm"),
+                    ("Ejector stroke [mm]", "ejector_stroke_mm"),
+                    ("Shot weight [g]", "shot_weight_g"),
+                    ("Plasticising flow [kg/h]", "plasticising_flow_kgh"),
+                    ("Dosage capacity [g/s]", "dosage_capacity_gs"),
+                    ("Dosage volume [ccm]", "dosage_volume_ccm"),
+                    ("Material cushion [ccm]", "material_cushion_ccm"),
+                    ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
+                ]
+                for i,(lab,fid) in enumerate(kd):
+                    box(kd_x, y_kd - rh*(i+1), 50*mm, rh, lab, snap.get(fid,""))
+
+                y -= rh + 20
+
+                # Injection table
+                draw_text(x, y-10, "Injection", 12, True)
+                y -= 12
+                def triple_row(lbl, a,b,c, row):
+                    yy = y - rh*row
+                    box(x, yy-rh, 50*mm, rh, lbl, "")
+                    box(x+50*mm, yy-rh, 20*mm, rh, None, a, center=True)
+                    box(x+70*mm, yy-rh, 20*mm, rh, None, b, center=True)
+                    box(x+90*mm, yy-rh, 20*mm, rh, None, c, center=True)
+                triple_row("Injection press. limiting [bar]", snap.get("inj_press_lim_1",""), snap.get("inj_press_lim_2",""), snap.get("inj_press_lim_3",""), 0)
+                triple_row("Injection speed [mm/s]",          snap.get("inj_speed_1",""),     snap.get("inj_speed_2",""),     snap.get("inj_speed_3",""),     1)
+                triple_row("End of stage [mm]",               snap.get("inj_end_stage_mm_1",""), snap.get("inj_end_stage_mm_2",""), snap.get("inj_end_stage_mm_3",""), 2)
+                triple_row("Injection flow [ccm/s]",          snap.get("inj_flow_1",""),     snap.get("inj_flow_2",""),     snap.get("inj_flow_3",""),     3)
+                triple_row("End of stage [ccm]",              snap.get("inj_end_stage_ccm_1",""), snap.get("inj_end_stage_ccm_2",""), snap.get("inj_end_stage_ccm_3",""), 4)
+                y -= rh*5 + 16
+
+                # Plasticizing
+                draw_text(x, y-10, "Plasticizing (St.1)", 12, True); y -= 12
+                box(x, y-rh, 50*mm, rh, "Screw speed [m/min]", snap.get("plast_screw_speed",""))
+                y -= rh
+                box(x, y-rh, 50*mm, rh, "Back pressure [bar]", snap.get("plast_back_pressure",""))
+                y -= rh
+                box(x, y-rh, 50*mm, rh, "End of stage [ccm]",  snap.get("plast_end_stage_ccm",""))
+                y -= rh + 12
+
+                # Holding pressure
+                draw_text(x, y-10, "Holding pressure (Pcs.2)", 12, True); y -= 12
+                box(x, y-rh, 50*mm, rh, "Time [s]", "")
+                box(x+50*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_1",""), center=True)
+                box(x+70*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_2",""), center=True)
+                box(x+90*mm, y-rh, 20*mm, rh, None, snap.get("hp_time_3",""), center=True)
+                y -= rh
+                box(x, y-rh, 50*mm, rh, "Pressure [bar]", "")
+                for i,k in enumerate(["hp_press_1","hp_press_2","hp_press_3","hp_press_4"]):
+                    box(x+50*mm+i*20*mm, y-rh, 20*mm, rh, None, snap.get(k,""), center=True)
+                y -= rh + 12
+
+                # Temperatures
+                draw_text(x, y-10, "Temperatures", 12, True); y -= 12
+                def five_row(lbl, keys, row):
+                    yy = y - rh*row
+                    box(x, yy-rh, 50*mm, rh, lbl, "")
+                    for i,k in enumerate(keys):
+                        box(x+50*mm+i*20*mm, yy-rh, 20*mm, rh, None, snap.get(k,""), center=True)
+                five_row("Cylinder temp. [°C]", ["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], 0)
+                five_row("Tolerances [°C]",     ["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"], 1)
+                y -= rh*2
+                box(x, y-rh, 50*mm, rh, "Feed yoke temperature [°C]", snap.get("feed_yoke_temp",""))
+                y -= rh
+                box(x, y-rh, 50*mm, rh, "Lower enable tol. [°C]",     snap.get("lower_enable_tol",""))
+                box(x+70*mm, y-rh, 60*mm, rh, "Upper switch-off tol. [°C]", snap.get("upper_switch_off_tol",""))
+                y -= rh + 12
+
+                # Movements Opening
+                draw_text(x, y-10, "Mould movements — Opening (St.1 / St.2 / St.3)", 12, True); y -= 12
+                triple_row("End of stage [mm]", snap.get("open_end_mm_1",""), snap.get("open_end_mm_2",""), snap.get("open_end_mm_3",""), 0)
+                triple_row("Speed [mm/s]",      snap.get("open_speed_1",""),  snap.get("open_speed_2",""),  snap.get("open_speed_3",""),  1)
+                triple_row("Force [kN]",        snap.get("open_force_1",""),  snap.get("open_force_2",""),  snap.get("open_force_3",""),  2)
+                y -= rh*3 + 12
+
+                # Movements Closing
+                draw_text(x, y-10, "Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", 12, True); y -= 12
+                def quad_row(lbl, keys, row):
+                    yy = y - rh*row
+                    box(x, yy-rh, 50*mm, rh, lbl, "")
+                    for i,k in enumerate(keys):
+                        box(x+50*mm+i*20*mm, yy-rh, 20*mm, rh, None, snap.get(k,""), center=True)
+                quad_row("End of stage [mm]", ["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], 0)
+                quad_row("Speed [mm/s]",      ["close_speed_1","close_speed_2","close_speed_3","close_speed_4"],   1)
+                quad_row("Force [kN]",        ["close_force_1","close_force_2","close_force_3"],                    2)
+                y -= rh*3 + 12
+
+                # Clamping
+                draw_text(x, y-10, "Clamping", 12, True); y -= 12
+                box(x, y-rh, 50*mm, rh, "Mould closed [kN]", snap.get("mould_closed_kn",""))
+
+                c.showPage(); c.save()
+                messagebox.showinfo("Exportar PDF","Archivo PDF generado correctamente.")
+            except ModuleNotFoundError:
+                messagebox.showwarning("Dependencia faltante",
+                    "Para exportar PDF instala reportlab:\n\npip install reportlab")
+            except Exception as e:
+                messagebox.showerror("Exportar PDF", f"No se pudo exportar:\n{e}")
 
         tree.bind("<<TreeviewSelect>>", on_select)
+        btn_xlsx.configure(command=export_excel)
+        btn_pdf.configure(command=export_pdf)
         load_versions()
 
+    # --------------------------- Importar Excel simple ---------------------------
     def _import_excel(self):
         try:
             from openpyxl import load_workbook
@@ -667,6 +1072,7 @@ class MachineRecipesView(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("Importar Excel", f"No se pudo leer el archivo:\n{e}")
 
+    # --------------------------- Utilidades ---------------------------
     def _open_folder(self, path):
         try:
             if os.path.isdir(path):
