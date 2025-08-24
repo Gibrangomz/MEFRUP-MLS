@@ -1,5 +1,5 @@
-# views/reports_view.py — Dashboard con Seaborn, export pulido (logo a la derecha),
-# colores pro y más headroom en Y para gráficas 1 y 3
+# views/reports_view.py — Dashboard claro tipo SaaS (Seaborn),
+# export pulido (logo a la derecha), colores pro y más headroom
 
 from .base import *  # ctk, tk, Calendar, messagebox, filedialog, MACHINES, resumen_rango_maquina, leer_shipments
 
@@ -18,7 +18,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-# ---------- Matplotlib + Seaborn ----------
+# ---------- Matplotlib + Seaborn (tema claro pro) ----------
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -26,46 +26,60 @@ import matplotlib.dates as mdates
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 
-sns.set_theme(style="whitegrid", rc={
-    "figure.dpi": 120,
-    "savefig.dpi": 320,    # el render final lo controla RENDER_DPI
-    "font.size": 9,
-    "axes.titlesize": 11,
-    "axes.labelsize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "axes.grid": True,
-    "grid.alpha": 0.18,
-})
+# NO forzamos modo oscuro (queda el default claro)
 
-# Tamaño lógico y resolución de salida (más DPI = más nitidez)
+# Tamaño lógico y resolución de salida
 BASE_DPI   = 140
-RENDER_DPI = 320
-CHART_W    = 520  # px mostrados en la UI/Excel
-CHART_H    = 190  # px
+RENDER_DPI = 360
+CHART_W    = 560
+CHART_H    = 220
+
 LOGO_PATH  = globals().get("LOGO_PATH", "")
 
-# Paleta consistente (Tailwind-like)
+# Paleta moderna (acento colorido)
 PALETTE = {
-    "buenas": "#2563EB",   # azul
-    "scrap":  "#F97316",   # naranja
-    "total":  "#14B8A6",   # teal
+    "buenas": "#22C55E",  # green-500
+    "scrap":  "#EF4444",  # red-500
+    "total":  "#06B6D4",  # cyan-500
 
-    "avail":  "#3B82F6",   # azul
-    "perf":   "#F59E0B",   # ámbar
-    "qual":   "#10B981",   # verde
-    "oee":    "#8B5CF6",   # violeta
+    "avail":  "#3B82F6",  # blue-500
+    "perf":   "#F59E0B",  # amber-500
+    "qual":   "#10B981",  # emerald-500
+    "oee":    "#8B5CF6",  # violet-500
 
-    "ship":   "#DC2626",   # rojo para salidas
-    "disp":   "#059669",   # emerald para disponible
+    "ship":   "#DC2626",  # red-600
+    "disp":   "#059669",  # emerald-600
 
-    "oee_line": "#2563EB", # azul en control chart
-    "band":    "#D1FAE5",  # verde pálido banda ±3σ
-    "mean":    "#111827",  # casi negro
+    "oee_line": "#2563EB",
+    "band":     "#D1FAE5",  # verde pálido
+    "mean":     "#111827",  # casi negro
 }
 
-_EXEC = ThreadPoolExecutor(max_workers=4)
+# Estilo base claro
+sns.set_theme(style="whitegrid", rc={
+    "figure.dpi": 120,
+    "savefig.dpi": 360,
+    "font.size": 9,
+    "axes.titlesize": 12,
+    "axes.labelsize": 10,
+    "xtick.labelsize": 8.5,
+    "ytick.labelsize": 8.5,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+})
+plt.rcParams.update({
+    "figure.facecolor":   "#FFFFFF",
+    "axes.facecolor":     "#FFFFFF",
+    "savefig.facecolor":  "#FFFFFF",
+    "axes.edgecolor":     "#E5E7EB",
+    "axes.labelcolor":    "#111827",
+    "xtick.color":        "#374151",
+    "ytick.color":        "#374151",
+    "text.color":         "#111827",
+    "grid.color":         "#E5E7EB",
+})
 
+_EXEC = ThreadPoolExecutor(max_workers=4)
 
 def _pdf_safe(text: str) -> str:
     if text is None: return ""
@@ -86,78 +100,100 @@ class ReportsView(ctk.CTkFrame):
 
     # ===================== UI =====================
     def _build(self):
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#1c1c1e"))
+        # Header claro tipo SaaS
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color="#F9FAFB")
         header.pack(fill="x", side="top")
-        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(16, 10), pady=10)
-        ctk.CTkLabel(header, text="Reportes de Producción", font=ctk.CTkFont("Helvetica", 20, "bold")
-        ).pack(side="left", pady=10)
-        self.btn_generate_top = ctk.CTkButton(header, text="↻ Generar", command=self._generar_async)
-        self.btn_generate_top.pack(side="right", padx=16, pady=10)
+        ctk.CTkButton(header, text="← Menú", command=self.app.go_menu, width=110,
+                      corner_radius=10, fg_color="#E5E7EB", text_color="#111827",
+                      hover_color="#D1D5DB").pack(side="left", padx=(16, 10), pady=10)
+        ctk.CTkLabel(header, text="Financial / Production Dashboard",
+                     font=ctk.CTkFont("Helvetica", 20, "bold"),
+                     text_color="#111827").pack(side="left", pady=10)
 
-        filters = ctk.CTkFrame(self, fg_color=("white", "#1c1c1e"))
+        right = ctk.CTkFrame(header, fg_color="transparent")
+        right.pack(side="right", padx=16, pady=10)
+        self.btn_generate_top = ctk.CTkButton(right, text="↻ Generar",
+                                              command=self._generar_async,
+                                              corner_radius=10, fg_color="#2563EB",
+                                              text_color="white")
+        self.btn_generate_top.pack(side="right")
+
+        # Filtros
+        filters = ctk.CTkFrame(self, fg_color="#FFFFFF")
         filters.pack(fill="x", padx=32, pady=(10, 0))
         opciones = [m.get("id", "") for m in (MACHINES if "MACHINES" in globals() else [])] or [""]
         self.machine_var = tk.StringVar(value=opciones[0] if opciones else "")
-        ctk.CTkLabel(filters, text="Máquina:").grid(row=0, column=0, sticky="e", padx=(12, 6), pady=10)
+        ctk.CTkLabel(filters, text="Máquina:", text_color="#111827"
+        ).grid(row=0, column=0, sticky="e", padx=(12, 6), pady=10)
         ctk.CTkOptionMenu(filters, values=opciones, variable=self.machine_var, width=160
         ).grid(row=0, column=1, sticky="w", padx=(0, 18), pady=10)
 
-        ctk.CTkLabel(filters, text="Desde:").grid(row=0, column=2, sticky="e", padx=(6, 6))
+        ctk.CTkLabel(filters, text="Desde:", text_color="#111827"
+        ).grid(row=0, column=2, sticky="e", padx=(6, 6))
         self.desde_entry = ctk.CTkEntry(filters, width=130); self.desde_entry.grid(row=0, column=3, sticky="w")
         ctk.CTkButton(filters, text="📅", width=36, command=lambda: self._calendar_pick(self.desde_entry)
         ).grid(row=0, column=4, padx=(6, 18))
 
-        ctk.CTkLabel(filters, text="Hasta:").grid(row=0, column=5, sticky="e", padx=(6, 6))
+        ctk.CTkLabel(filters, text="Hasta:", text_color="#111827"
+        ).grid(row=0, column=5, sticky="e", padx=(6, 6))
         self.hasta_entry = ctk.CTkEntry(filters, width=130); self.hasta_entry.grid(row=0, column=6, sticky="w")
         ctk.CTkButton(filters, text="📅", width=36, command=lambda: self._calendar_pick(self.hasta_entry)
         ).grid(row=0, column=7, padx=(6, 18))
 
-        self.btn_generate = ctk.CTkButton(filters, text="Generar", command=self._generar_async, corner_radius=10)
+        self.btn_generate = ctk.CTkButton(filters, text="Generar", command=self._generar_async, corner_radius=10,
+                                          fg_color="#2563EB", text_color="white")
         self.btn_generate.grid(row=0, column=8, sticky="e", padx=(0, 12))
 
-        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color=("#F5F5F7", "#121212"))
+        # Scroll principal
+        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="#F3F4F6")
         self.scroll.pack(fill="both", expand=True, padx=16, pady=16)
 
         self._build_kpis(self.scroll)
 
-        self.charts = ctk.CTkFrame(self.scroll, corner_radius=20, fg_color=("white", "#1c1c1e"))
+        self.charts = ctk.CTkFrame(self.scroll, corner_radius=20, fg_color="#FFFFFF")
         self.charts.pack(fill="both", expand=True)
         self.charts.grid_columnconfigure((0, 1), weight=1)
-        ctk.CTkLabel(self.charts, text="Genera un reporte para ver las gráficas…"
+        ctk.CTkLabel(self.charts, text="Genera un reporte para ver las gráficas…",
+                     text_color="#6B7280"
         ).grid(row=0, column=0, padx=12, pady=12, sticky="w")
 
         self._build_table(self.scroll)
 
         btns = ctk.CTkFrame(self.scroll, fg_color="transparent")
         btns.pack(fill="x", pady=(12, 10))
-        ctk.CTkButton(btns, text="Exportar PDF/Excel", command=self._exportar).pack(side="right")
+        ctk.CTkButton(btns, text="Exportar PDF/Excel", command=self._exportar,
+                      corner_radius=10, fg_color="#22C55E", text_color="white").pack(side="right")
 
     def _build_kpis(self, parent):
-        stats = ctk.CTkFrame(parent, corner_radius=16, fg_color=("white", "#1c1c1e"))
+        stats = ctk.CTkFrame(parent, corner_radius=18, fg_color="#FFFFFF")
         stats.pack(fill="x", pady=(0, 14))
-        stats.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
-        self.card_total, self.lbl_total = self._kpi(stats, "Total (pzs)", ("#E5E7EB", "#2B2B2B")); self.card_total.grid(row=0, column=0, padx=6, pady=6, sticky="nsew")
-        self.card_buenas, self.lbl_buenas = self._kpi(stats, "Buenas (pzs)", ("#DCFCE7", "#065F46")); self.card_buenas.grid(row=0, column=1, padx=6, pady=6, sticky="nsew")
-        self.card_scrap, self.lbl_scrap = self._kpi(stats, "Scrap (pzs)", ("#FEE2E2", "#991B1B")); self.card_scrap.grid(row=0, column=2, padx=6, pady=6, sticky="nsew")
-        self.card_oee, self.lbl_oee = self._kpi(stats, "OEE Prom", ("#FEF9C3", "#92400E")); self.card_oee.grid(row=0, column=3, padx=6, pady=6, sticky="nsew")
-        self.card_paro, self.lbl_paro = self._kpi(stats, "Paro total (min)", ("#E5E7EB", "#2B2B2B")); self.card_paro.grid(row=0, column=4, padx=6, pady=6, sticky="nsew")
+        stats.grid_columnconfigure((0,1,2,3,4), weight=1)
 
-    def _kpi(self, parent, title, color):
-        card = ctk.CTkFrame(parent, corner_radius=16, fg_color=color)
-        ctk.CTkLabel(card, text=title, font=ctk.CTkFont("Helvetica", 13, "bold")
-        ).pack(anchor="w", padx=12, pady=(10, 0))
-        lbl = ctk.CTkLabel(card, text="0", font=ctk.CTkFont("Helvetica", 20, "bold"))
-        lbl.pack(anchor="w", padx=12, pady=(0, 10))
-        return card, lbl
+        self.card_total,  self.lbl_total  = self._kpi(stats, "Total (pzs)",   "#06B6D4"); self.card_total.grid(row=0, column=0, padx=6, pady=6, sticky="nsew")
+        self.card_buenas, self.lbl_buenas = self._kpi(stats, "Buenas (pzs)",  "#22C55E"); self.card_buenas.grid(row=0, column=1, padx=6, pady=6, sticky="nsew")
+        self.card_scrap,  self.lbl_scrap  = self._kpi(stats, "Scrap (pzs)",   "#EF4444"); self.card_scrap.grid(row=0, column=2, padx=6, pady=6, sticky="nsew")
+        self.card_oee,    self.lbl_oee    = self._kpi(stats, "OEE Prom",      "#8B5CF6"); self.card_oee.grid(row=0, column=3, padx=6, pady=6, sticky="nsew")
+        self.card_paro,   self.lbl_paro   = self._kpi(stats, "Paro total (min)", "#9CA3AF"); self.card_paro.grid(row=0, column=4, padx=6, pady=6, sticky="nsew")
+
+    def _kpi(self, parent, title, accent_hex="#06B6D4"):
+        card = ctk.CTkFrame(parent, corner_radius=14, fg_color="#F9FAFB")        
+        header = ctk.CTkFrame(card, corner_radius=12, fg_color="#FFFFFF")        
+        header.pack(fill="x", padx=8, pady=(8,4))
+        ctk.CTkLabel(header, text=title, text_color="#374151",
+                     font=ctk.CTkFont("Helvetica", 12, "bold")).pack(anchor="w", padx=10, pady=6)
+        val = ctk.CTkLabel(card, text="0", text_color="#111827",
+                           font=ctk.CTkFont("Helvetica", 22, "bold"))
+        val.pack(anchor="w", padx=14, pady=(0,10))
+        dot = ctk.CTkFrame(header, width=10, height=10, corner_radius=999, fg_color=accent_hex)
+        dot.place(relx=1.0, x=-12, rely=0.5, anchor="e")
+        return card, val
 
     def _build_table(self, parent):
-        card = ctk.CTkFrame(parent, corner_radius=16, fg_color=("white", "#1c1c1e"))
+        card = ctk.CTkFrame(parent, corner_radius=16, fg_color="#FFFFFF")
         card.pack(fill="both", expand=True, pady=(14, 0))
-        ctk.CTkLabel(card, text="Detalle diario", font=ctk.CTkFont("Helvetica", 14, "bold")
-        ).pack(anchor="w", padx=12, pady=(10, 6))
-        ctk.CTkFrame(card, height=1, fg_color=("#E5E7EB", "#2B2B2B")
-        ).pack(fill="x", padx=12, pady=(0, 8))
+        ctk.CTkLabel(card, text="Detalle diario", font=ctk.CTkFont("Helvetica", 14, "bold"),
+                     text_color="#111827").pack(anchor="w", padx=12, pady=(10, 6))
+        ctk.CTkFrame(card, height=1, fg_color="#E5E7EB").pack(fill="x", padx=12, pady=(0, 8))
         cols = ("fecha", "availability", "performance", "quality", "oee", "buenas", "scrap", "total")
         self.tbl = ttk.Treeview(card, columns=cols, show="headings", height=10)
         for k, t, w in [
@@ -167,9 +203,11 @@ class ReportsView(ctk.CTkFrame):
         ]:
             self.tbl.heading(k, text=t); self.tbl.column(k, width=w, anchor="center")
         self.tbl.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-        self.lbl_tbl_total = ctk.CTkLabel(card, text="—", text_color=("#6b7280", "#9CA3AF"))
+        self.lbl_tbl_total = ctk.CTkLabel(card, text="—", text_color="#6B7280")
         self.lbl_tbl_total.pack(anchor="w", padx=12, pady=(0, 12))
 
+    # ... (el resto de helpers, gráficas y export se mantienen IGUAL que en el modo oscuro,
+    # ya que los colores de paleta y estilo matplotlib ya están ajustados a claro)
     # ============== Helpers ==============
     def _tone(self, oee):
         return ("#DCFCE7", "#065F46") if oee >= 85 else (("#FEF9C3", "#92400E") if oee >= 60 else ("#FEE2E2", "#991B1B"))
