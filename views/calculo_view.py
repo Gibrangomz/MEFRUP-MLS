@@ -83,7 +83,7 @@ class CalculoView(ctk.CTkFrame):
         self.columnconfigure(0, weight=1)
 
         # ---- Header ----
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#1c1c1e"), height=56)
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("white", "#1c1c1e"), height=48)
         header.grid(row=0, column=0, sticky="nsew")
         header.grid_columnconfigure(1, weight=1)
 
@@ -91,18 +91,19 @@ class CalculoView(ctk.CTkFrame):
             header,
             text="← Menú",
             command=self.app.go_menu,
-            width=110,
+            width=90,
+            height=32,
             corner_radius=10,
             fg_color="#E5E7EB",
             text_color="#111",
             hover_color="#D1D5DB",
-        ).grid(row=0, column=0, padx=(16, 10), pady=10)
+        ).grid(row=0, column=0, padx=(16, 10), pady=8)
 
         ctk.CTkLabel(
             header,
             text="Cálculo (Chat)",
-            font=ctk.CTkFont("Helvetica", 20, "bold"),
-        ).grid(row=0, column=1, sticky="w", pady=10, padx=(0, 16))
+            font=ctk.CTkFont("Helvetica", 18, "bold"),
+        ).grid(row=0, column=1, sticky="w", pady=8, padx=(0, 16))
 
         # ---- Body: sidebar + chat ----
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -111,7 +112,7 @@ class CalculoView(ctk.CTkFrame):
         body.columnconfigure(1, weight=1)
 
         # Sidebar
-        self.sidebar = ctk.CTkFrame(body, width=260, fg_color=("white", "#0F1115"))
+        self.sidebar = ctk.CTkFrame(body, width=220, fg_color=("white", "#0F1115"))
         self.sidebar.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
         self.sidebar.grid_propagate(False)
         self.sidebar.rowconfigure(3, weight=1)
@@ -127,7 +128,7 @@ class CalculoView(ctk.CTkFrame):
             self.sidebar,
             text="➕ Nuevo chat",
             command=self.new_chat,
-            height=36,
+            height=32,
             corner_radius=10,
         ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
 
@@ -142,14 +143,14 @@ class CalculoView(ctk.CTkFrame):
             tools,
             text="📝 Renombrar",
             command=self.rename_chat,
-            height=32,
+            height=28,
         ).pack(side="left", expand=True, fill="x", padx=(0, 6))
 
         ctk.CTkButton(
             tools,
             text="🗑️ Borrar",
             command=self.delete_chat,
-            height=32,
+            height=28,
             fg_color="#fee2e2",
             text_color="#7f1d1d",
             hover_color="#fecaca",
@@ -170,7 +171,7 @@ class CalculoView(ctk.CTkFrame):
 
         self.entry = ctk.CTkTextbox(
             bottom,
-            height=60,
+            height=50,
             corner_radius=8,
             border_width=1,
             border_color="#9CA3AF",
@@ -204,8 +205,8 @@ class CalculoView(ctk.CTkFrame):
             bottom,
             text="➤",
             command=self.send,
-            height=60,
-            width=60,
+            height=48,
+            width=48,
             font=ctk.CTkFont(size=20)
         )
         self.send_btn.grid(row=0, column=1)
@@ -255,7 +256,7 @@ class CalculoView(ctk.CTkFrame):
                 self.sessions_frame,
                 text=text,
                 anchor="w",
-                height=48,
+                height=40,
                 command=lambda i=idx: self.select_chat(i),
                 fg_color="transparent",
                 text_color=("black", "white"),
