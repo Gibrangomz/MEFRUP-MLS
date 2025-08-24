@@ -37,6 +37,7 @@ class MainMenu(ctk.CTkFrame):
             {"text": "Reportes de Producción", "command": app.go_reports, "height": 44},
             {"text": "Inventario", "command": app.go_inventory, "height": 44},
             {"text": "Salida de Piezas (Embarques)", "command": app.go_shipments, "height": 44},
+            {"text": "Calculo", "command": app.go_calculo, "height": 44},
         ]
 
         for i, kwargs in enumerate(btns):

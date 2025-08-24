@@ -24,6 +24,7 @@ from views.planning import PlanningMilestonesView
 from views.orders_board import OrdersBoardView
 from views.inventory_view import InventoryView
 from views.shipments_view import ShipmentsView
+from views.calculo_view import CalculoView
 
 class App(ctk.CTk):
     def __init__(self):
@@ -83,6 +84,7 @@ class App(ctk.CTk):
         self.reports_page = None
         self.inventory_page = None
         self.shipments_page = None
+        self.calculo_page = None
         self._shipments_preselect_order = None
 
 
@@ -192,6 +194,16 @@ class App(ctk.CTk):
         self._pack_only(self.shipments_page)
         if preselect_order:
             self.shipments_page.set_order(preselect_order)
+
+    def go_calculo(self):
+        self._unbind_shortcuts_oee()
+        pwd = ctk.CTkInputDialog(text="Contraseña:", title="Acceso a Calculo").get_input()
+        if pwd == "15211521Gg":
+            if not self.calculo_page:
+                self.calculo_page = CalculoView(self.container, self)
+            self._pack_only(self.calculo_page)
+        elif pwd is not None:
+            messagebox.showerror("Acceso denegado", "Contraseña incorrecta.")
 
     # recetas / moldes
     def _refresh_moldes_from_recipes(self, force_update_menu=False):
