@@ -6,7 +6,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
 from tkcalendar import Calendar
-import csv, os, logging, traceback
+import csv, os, sys, logging, traceback
 from datetime import datetime, date, timedelta
 
 from config import *
@@ -24,7 +24,7 @@ from views.planning import PlanningMilestonesView
 from views.orders_board import OrdersBoardView
 from views.inventory_view import InventoryView
 from views.shipments_view import ShipmentsView
-from views.calculo_view import CalculoView
+import subprocess
 
 class App(ctk.CTk):
     def __init__(self):
@@ -84,7 +84,6 @@ class App(ctk.CTk):
         self.reports_page = None
         self.inventory_page = None
         self.shipments_page = None
-        self.calculo_page = None
         self._shipments_preselect_order = None
 
 
@@ -199,9 +198,10 @@ class App(ctk.CTk):
         self._unbind_shortcuts_oee()
         pwd = ctk.CTkInputDialog(text="Contraseña:", title="Acceso a Calculo").get_input()
         if pwd == "15211521Gg":
-            if not self.calculo_page:
-                self.calculo_page = CalculoView(self.container, self)
-            self._pack_only(self.calculo_page)
+            try:
+                subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "views", "calculo_qt.py")])
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo abrir el panel de cálculo: {e}")
         elif pwd is not None:
             messagebox.showerror("Acceso denegado", "Contraseña incorrecta.")
 
