@@ -102,7 +102,7 @@ class CalculoView(ctk.CTkFrame):
             header,
             text="Cálculo (Chat)",
             font=ctk.CTkFont("Helvetica", 20, "bold"),
-        ).grid(row=0, column=1, sticky="w", pady=10)
+        ).grid(row=0, column=1, sticky="w", pady=10, padx=(0, 16))
 
         # ---- Body: sidebar + chat ----
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -162,10 +162,10 @@ class CalculoView(ctk.CTkFrame):
         self.main.columnconfigure(0, weight=1)
 
         self.history = ctk.CTkScrollableFrame(self.main, fg_color=("white", "#0F1115"))
-        self.history.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        self.history.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
         bottom = ctk.CTkFrame(self.main, fg_color=("white", "#0F1115"))
-        bottom.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        bottom.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
         bottom.columnconfigure(0, weight=1)
 
         self.entry = ctk.CTkTextbox(
@@ -178,7 +178,36 @@ class CalculoView(ctk.CTkFrame):
         self.entry.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         self.entry.bind("<Shift-Return>", lambda e: self.send())
 
-        self.send_btn = ctk.CTkButton(bottom, text="Enviar", command=self.send, height=60)
+        # placeholder en el cuadro de texto
+        self._entry_ph = "Escribe tu consulta aquí..."
+        self._entry_has_ph = True
+        self.entry.insert("1.0", self._entry_ph)
+        self.entry.configure(text_color="#9CA3AF")
+
+        def _ph_focus_in(_):
+            if self._entry_has_ph:
+                self.entry.delete("1.0", "end")
+                self.entry.configure(text_color=("black", "white"))
+                self._entry_has_ph = False
+
+        def _ph_focus_out(_):
+            if not self.entry.get("1.0", "end").strip():
+                self.entry.insert("1.0", self._entry_ph)
+                self.entry.configure(text_color="#9CA3AF")
+                self._entry_has_ph = True
+
+        self._ph_focus_out = _ph_focus_out
+        self.entry.bind("<FocusIn>", _ph_focus_in)
+        self.entry.bind("<FocusOut>", _ph_focus_out)
+
+        self.send_btn = ctk.CTkButton(
+            bottom,
+            text="➤",
+            command=self.send,
+            height=60,
+            width=60,
+            font=ctk.CTkFont(size=20)
+        )
         self.send_btn.grid(row=0, column=1)
 
         # ---- Inicializa cliente OpenAI ----
@@ -232,7 +261,7 @@ class CalculoView(ctk.CTkFrame):
                 text_color=("black", "white"),
                 hover_color=("#D1D5DB", "#2d2d2d"),
             )
-            btn.grid(row=idx, column=0, sticky="ew", pady=(0, 4))
+            btn.grid(row=idx, column=0, sticky="ew", pady=(0, 8))
             self._session_buttons.append(btn)
 
     def select_chat(self, idx: int):
@@ -289,9 +318,11 @@ class CalculoView(ctk.CTkFrame):
     # ============ Envío y respuesta ============
     def send(self):
         txt = self.entry.get("1.0", "end").strip()
-        if not txt:
+        if not txt or (self._entry_has_ph and txt == self._entry_ph):
             return
         self.entry.delete("1.0", "end")
+        self._entry_has_ph = False
+        self._ph_focus_out(None)
         self._bubble("user", txt)
         self._ask_openai_async(txt)
         if self.current_session and self.current_session.title == "Nuevo chat":
@@ -363,7 +394,7 @@ class CalculoView(ctk.CTkFrame):
             self.current_session.save()
 
         wrap = ctk.CTkFrame(self.history, fg_color="transparent")
-        wrap.pack(fill="x", padx=10, pady=6)
+        wrap.pack(fill="x", padx=12, pady=8)
 
         is_user = (role == "user")
         bubble_color = "#2563EB" if is_user else "#374151"
@@ -377,11 +408,11 @@ class CalculoView(ctk.CTkFrame):
             inner,
             text=text,
             justify="left",
-            wraplength=820,
+            wraplength=760,
             text_color=text_color,
             font=ctk.CTkFont(size=14),
         )
-        lbl.pack(padx=12, pady=(8, 2), anchor="w")
+        lbl.pack(padx=14, pady=(10, 4), anchor="w")
 
         controls = ctk.CTkFrame(inner, fg_color="transparent")
         controls.pack(fill="x", padx=8, pady=(0, 6))
