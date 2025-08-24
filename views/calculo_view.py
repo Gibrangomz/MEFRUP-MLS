@@ -240,6 +240,7 @@ class CalculoView(ctk.CTkFrame):
     def _ask_openai_async(self, user_text: str):
         if self._loading:
             return
+
         def worker():
             self._set_busy(True)
             try:
@@ -247,21 +248,42 @@ class CalculoView(ctk.CTkFrame):
                     self._bubble("system", "⚠️ Cliente OpenAI no inicializado. Revisa tu .env.")
                     return
 
+                history = []
+                if self.current_session:
+                    history = [{"role": m.role, "content": m.content} for m in self.current_session.messages]
+                history.append({"role": "user", "content": user_text})
+
                 kwargs = {
                     "prompt": {"id": PROMPT_ID, "version": PROMPT_VERSION},
-                    "input": user_text,
+                    "input": history,
                     "temperature": TEMPERATURE,
                     "max_output_tokens": MAX_OUTPUT_TOKENS,
+                    "stream": True,
                 }
                 if VECTOR_STORE_ID:
                     kwargs["tools"] = [{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}]
 
-                resp = self.client.responses.create(**kwargs)
-                out  = (getattr(resp, "output_text", "") or "").strip()
+                lbl = self._bubble("assistant", "", save=False)
+                chunks = []
+                with self.client.responses.stream(**kwargs) as stream:
+                    for event in stream:
+                        if event.type == "response.output_text.delta":
+                            chunks.append(event.delta)
+                            lbl.configure(text="".join(chunks))
+                            try:
+                                self.history._parent_canvas.yview_moveto(1)
+                            except Exception:
+                                pass
+                        elif event.type == "response.completed":
+                            break
+
+                out = "".join(chunks).strip()
                 if not out:
                     out = "No recibí texto de salida. Revisa el Prompt o el input."
 
-                self._bubble("assistant", out)
+                if self.current_session:
+                    self.current_session.messages.append(ChatMessage(role="assistant", content=out, ts=time.time()))
+                    self.current_session.save()
 
             except Exception as e:
                 self._bubble("system", f"⚠️ Error API: {e}\n\n{traceback.format_exc(limit=1)}")
@@ -289,13 +311,30 @@ class CalculoView(ctk.CTkFrame):
 
         lbl = ctk.CTkLabel(inner, text=text, justify="left", wraplength=820,
                            text_color=text_color, font=ctk.CTkFont(size=14))
-        lbl.pack(padx=12, pady=8)
+        lbl.pack(padx=12, pady=(8,2), anchor="w")
 
-        # autoscroll
+        controls = ctk.CTkFrame(inner, fg_color="transparent")
+        controls.pack(fill="x", padx=8, pady=(0,6))
+
+        ctk.CTkLabel(controls, text=dt.datetime.now().strftime("%H:%M"),
+                     font=ctk.CTkFont(size=10), text_color=text_color).pack(side="left")
+
+        def copy_text(txt=text):
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(txt)
+            except Exception:
+                pass
+        ctk.CTkButton(controls, text="Copiar", width=60, height=20,
+                      command=copy_text, fg_color="#D1D5DB", text_color="#111",
+                      hover_color="#9CA3AF").pack(side="right")
+
         try:
             self.history._parent_canvas.yview_moveto(1)
         except Exception:
             pass
+
+        return lbl
 
     def _set_busy(self, busy: bool):
         self._loading = busy
