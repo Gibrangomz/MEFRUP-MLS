@@ -431,6 +431,41 @@ def _strip_links_and_drawings(wb):
         except Exception:
             pass
 
+def _purge_all_formulas(wb):
+    """Elimina TODA fórmula del libro (incluidas compartidas) para que Excel no 'repare'."""
+    for ws in wb.worksheets:
+        # romper metadatos de fórmulas compartidas
+        try:
+            ws.formula_attributes = {}
+        except Exception:
+            pass
+
+        # recorrer rango usado y borrar fórmulas
+        dim = ws.calculate_dimension()
+        if not dim or ":" not in dim:
+            continue
+        min_c, min_r, max_c, max_r = range_boundaries(dim)
+        for row in ws.iter_rows(min_row=min_r, max_row=max_r, min_col=min_c, max_col=max_c):
+            for cell in row:
+                if isinstance(cell, MergedCell):
+                    continue
+                try:
+                    if getattr(cell, "data_type", None) == "f" or (isinstance(cell.value, str) and cell.value.startswith("=")):
+                        cell.value = None
+                except Exception:
+                    pass
+
+    # algunos nombres definidos son fórmulas -> quitarlos
+    try:
+        keep = []
+        for dn in list(wb.defined_names.definedName):
+            if getattr(dn, "attr_text", "") and str(dn.attr_text).startswith("="):
+                continue
+            keep.append(dn)
+        wb.defined_names.definedName = keep
+    except Exception:
+        pass
+
 def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
     from openpyxl import load_workbook
     keep_vba = template_path.lower().endswith((".xlsm", ".xlsb"))
@@ -449,6 +484,9 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
 
     # Eliminar externalLinks/drawings para que Excel NO "repairs"
     _strip_links_and_drawings(wb)
+
+    # eliminar TODAS las fórmulas del libro (evita el “se han quitado fórmulas”)
+    _purge_all_formulas(wb)
 
     wb.save(out_path)
 
@@ -474,6 +512,10 @@ def _export_with_excel_com(snapshot: dict, out_path: str, template_path: str, sh
             pass
 
         ws = wb.Worksheets(sheet_name) if sheet_name else wb.Worksheets(1)
+        try:
+            excel.ActiveWindow.DisplayZeros = False
+        except Exception:
+            pass
 
         for excel_key, spec in EXCEL_MAP.items():
             ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
