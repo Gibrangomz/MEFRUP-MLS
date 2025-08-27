@@ -64,9 +64,9 @@ EXCEL_MAP = {
     "end_of_stage_ccm_3": "G:15",
 
     # ---------- Plasticizing (filas 18–20) ----------
-    "screw_speed_m_min_1": "F:18",
-    "back_pressure_bar": "F:19",
-    "plasticizing_end_stage_ccm": "F:20",
+    "screw_speed_m_min_1": "E:18",
+    "back_pressure_bar": "E:19",
+    "plasticizing_end_stage_ccm": "E:20",
 
     # ---------- Holding pressure (filas 23–24) ----------
     "hold_time_s_1": "F:23",
@@ -96,36 +96,36 @@ EXCEL_MAP = {
 
     # ---------- Mould movements (31–33) ----------
     # Opening
-    "opening_end_stage_mm_1": "H:31",
-    "opening_end_stage_mm_2": "G:31",
-    "opening_end_stage_mm_3": "F:31",
-    "opening_end_stage_mm_4": "E:31",
+    "opening_end_stage_mm_1": "E:31",
+    "opening_end_stage_mm_2": "F:31",
+    "opening_end_stage_mm_3": "G:31",
+    "opening_end_stage_mm_4": "H:31",
 
-    "opening_speed_mm_s_1": "H:32",
-    "opening_speed_mm_s_2": "G:32",
-    "opening_speed_mm_s_3": "F:32",
-    "opening_speed_mm_s_4": "E:32",
+    "opening_speed_mm_s_1": "E:32",
+    "opening_speed_mm_s_2": "F:32",
+    "opening_speed_mm_s_3": "G:32",
+    "opening_speed_mm_s_4": "H:32",
 
-    "opening_force_kN_1": "H:33",
-    "opening_force_kN_2": "G:33",
-    "opening_force_kN_3": "F:33",
-    "opening_force_kN_4": "E:33",
+    "opening_force_kN_1": "E:33",
+    "opening_force_kN_2": "F:33",
+    "opening_force_kN_3": "G:33",
+    "opening_force_kN_4": "H:33",
 
     # Closing
-    "closing_end_stage_mm_1": "N:31",
-    "closing_end_stage_mm_2": "M:31",
-    "closing_end_stage_mm_3": "L:31",
-    "closing_end_stage_mm_4": "K:31",
+    "closing_end_stage_mm_1": "K:31",
+    "closing_end_stage_mm_2": "L:31",
+    "closing_end_stage_mm_3": "M:31",
+    "closing_end_stage_mm_4": "N:31",
 
-    "closing_speed_mm_s_1": "N:32",
-    "closing_speed_mm_s_2": "M:32",
-    "closing_speed_mm_s_3": "L:32",
-    "closing_speed_mm_s_4": "K:32",
+    "closing_speed_mm_s_1": "K:32",
+    "closing_speed_mm_s_2": "L:32",
+    "closing_speed_mm_s_3": "M:32",
+    "closing_speed_mm_s_4": "N:32",
 
-    "closing_force_kN_1": "N:33",
-    "closing_force_kN_2": "M:33",
-    "closing_force_kN_3": "L:33",
-    "closing_force_kN_4": "K:33",
+    "closing_force_kN_1": "K:33",
+    "closing_force_kN_2": "L:33",
+    "closing_force_kN_3": "M:33",
+    "closing_force_kN_4": "N:33",
 
     # ---------- Clamping ----------
     "mould_closed_kN": "D:37",
