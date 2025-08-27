@@ -6,6 +6,13 @@ from datetime import datetime
 from openpyxl.utils import range_boundaries, get_column_letter, column_index_from_string
 from openpyxl.cell.cell import MergedCell
 
+# --- Detectar Excel COM una sola vez ---
+try:
+    import win32com.client as win32  # pywin32
+    HAS_EXCEL_COM = True
+except Exception:
+    HAS_EXCEL_COM = False
+
 # ---------- Paths ----------
 RECIPES_DIR = os.path.join(BASE_DIR, "machine_recipes")
 HISTORY_CSV = os.path.join(RECIPES_DIR, "_history.csv")
@@ -376,27 +383,72 @@ def _to_excel_value(excel_key: str, ui_key: str, raw_val):
             pass
     return _safe_excel(s)
 
-def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
-    """
-    Abre la plantilla y escribe los valores según EXCEL_MAP en la hoja indicada (o activa).
-    Mantiene estilos/formatos del template.
-    """
-    from openpyxl import load_workbook
+# --- Fallback limpio con openpyxl ---
+def _strip_links_and_drawings(wb):
+    # Quitar vínculos externos para que Excel no “repare”
+    try:
+        wb._external_links = []
+    except Exception:
+        pass
+    try:
+        rels = getattr(wb, "_rels", None)
+        if rels:
+            for rid in list(rels):
+                rel = rels[rid]
+                if "externalLink" in getattr(rel, "reltype", ""):
+                    del rels[rid]
+    except Exception:
+        pass
 
+    # Quitar drawings/legacy drawings por hoja (imágenes/autoformas)
+    for ws in wb.worksheets:
+        try:
+            ws._images = []
+        except Exception:
+            pass
+        try:
+            ws._charts = []
+        except Exception:
+            pass
+        try:
+            ws._drawing = None
+        except Exception:
+            pass
+        try:
+            if hasattr(ws, "_rels"):
+                for rid in list(ws._rels):
+                    if "drawing" in getattr(ws._rels[rid], "reltype", ""):
+                        del ws._rels[rid]
+        except Exception:
+            pass
+        try:
+            ws.legacy_drawing = None
+        except Exception:
+            pass
+        # Ocultar ceros en la vista
+        try:
+            ws.sheet_view.showZeros = False
+        except Exception:
+            pass
+
+def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
+    from openpyxl import load_workbook
     keep_vba = template_path.lower().endswith((".xlsm", ".xlsb"))
-    # ¡Clave!: keep_links=True para que Excel no “repairs externalLink”
-    wb = load_workbook(template_path, data_only=False, keep_vba=keep_vba, keep_links=True)
+    wb = load_workbook(template_path, data_only=False, keep_vba=keep_vba, keep_links=False)
     ws = wb[sheet_name] if (sheet_name and sheet_name in wb.sheetnames) else wb.active
 
-    # 1) Limpia bloques del template (así no quedan ceros por defecto)
+    # Limpiar bloques que mapeas
     _clear_blocks(ws, CLEAR_BLOCKS)
 
-    # 2) Escribe sólo lo que tú llenaste en la UI
+    # Escribir solo campos con valor
     for excel_key, spec in EXCEL_MAP.items():
         ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
         val = snapshot.get(ui_key, "")
-        target = _anchor_address(ws, spec)        # resuelve merges y "COLS:ROW"
+        target = _anchor_address(ws, spec)
         ws[target].value = _to_excel_value(excel_key, ui_key, val)
+
+    # Eliminar externalLinks/drawings para que Excel NO "repairs"
+    _strip_links_and_drawings(wb)
 
     wb.save(out_path)
 
@@ -406,28 +458,31 @@ def _a1_from_spec(spec: str) -> str:
     return a1.split(":")[0] if ":" in a1 else a1
 
 def _export_with_excel_com(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
-    """Abre la plantilla con Excel (COM), escribe las celdas mapeadas y guarda como out_path."""
-    import win32com.client as win32
-
     excel = win32.gencache.EnsureDispatch("Excel.Application")
     excel.Visible = False
     excel.DisplayAlerts = False
+    excel.AskToUpdateLinks = False
 
-    wb = excel.Workbooks.Open(template_path, UpdateLinks=0, ReadOnly=False)
+    # Abrir sin actualizar vínculos externos ni cálculo pesado
+    wb = excel.Workbooks.Open(template_path, UpdateLinks=0, ReadOnly=False, CorruptLoad=0)
     try:
+        excel.Calculation = -4135  # xlCalculationManual
+        wb.CheckCompatibility = False
+        try:
+            wb.ForceFullCalculation = False
+        except Exception:
+            pass
+
         ws = wb.Worksheets(sheet_name) if sheet_name else wb.Worksheets(1)
 
         for excel_key, spec in EXCEL_MAP.items():
             ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
             raw = snapshot.get(ui_key, "")
             val = "" if raw is None or str(raw).strip() == "" else raw
-
-            addr = _a1_from_spec(spec)
+            addr = _a1_from_spec(spec)        # top-left del merge
             ws.Range(addr).Value = val
 
-        # Especificar el formato explícitamente evita que Excel guarde
-        # archivos corruptos (p.ej. BIFF2) cuando no se indica FileFormat.
-        # 51 = xlOpenXMLWorkbook (.xlsx), 52 = xlOpenXMLWorkbookMacroEnabled (.xlsm)
+        # Guardar como .xlsx explícito (51); .xlsm (52) si quieres macro
         fmt = 52 if out_path.lower().endswith((".xlsm", ".xlsb")) else 51
         wb.SaveAs(Filename=out_path, FileFormat=fmt, ConflictResolution=2)
     finally:
@@ -1154,13 +1209,14 @@ class MachineRecipesView(ctk.CTkFrame):
                 snap_clean.pop("_meta", None)
 
                 # 4) Exportar a plantilla usando el EXCEL_MAP
-                #    Si tu plantilla usa una hoja específica, pásala por 'sheet_name="NombreHoja"'
-                try:
-                    if sys.platform.startswith("win"):
-                        _export_with_excel_com(snapshot=snap_clean, out_path=path, template_path=template_path)
-                    else:
-                        _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
-                except ImportError:
+                if sys.platform.startswith("win") and HAS_EXCEL_COM:
+                    _export_with_excel_com(snapshot=snap_clean, out_path=path, template_path=template_path)
+                else:
+                    # Aviso explícito: sin COM Excel podría meter reparaciones; usamos fallback seguro
+                    messagebox.showinfo(
+                        "Exportar Excel",
+                        "No se encontró Excel/pywin32. Usaré el modo 'limpio' sin vínculos ni dibujos para evitar reparaciones."
+                    )
                     _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
 
                 messagebox.showinfo("Exportar Excel", f"Archivo generado correctamente:\n{path}")
