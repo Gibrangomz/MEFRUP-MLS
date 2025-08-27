@@ -7,6 +7,7 @@ from .machine_recipes_constants import (
     _load_json,
     _save_json,
     _save_version_snapshot,
+    _cast_numeric,
 )
 from .machine_recipes_history_panel import open_history
 
