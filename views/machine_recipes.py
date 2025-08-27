@@ -334,12 +334,12 @@ def _anchor_address(ws, addr: str) -> str:
 
 def _to_excel_value(excel_key: str, ui_key: str, raw_val):
     s = "" if raw_val is None else str(raw_val).strip()
+    if s == "":
+        return None
     keys = {excel_key, ui_key}
     if any(k in NUM_FIELDS for k in keys):
         try:
             s2 = s.replace(",", "")
-            if s2 == "":
-                return None
             v = float(s2)
             return int(v) if abs(v - int(v)) < 1e-12 else v
         except Exception:
