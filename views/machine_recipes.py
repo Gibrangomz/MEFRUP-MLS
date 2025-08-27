@@ -334,7 +334,7 @@ def _anchor_address(ws, addr: str) -> str:
 
 def _to_excel_value(excel_key: str, ui_key: str, raw_val):
     s = "" if raw_val is None else str(raw_val).strip()
-    if s == "":
+    if s == "" or s.replace("0", "").replace(".", "") == "":
         return None
     keys = {excel_key, ui_key}
     if any(k in NUM_FIELDS for k in keys):
