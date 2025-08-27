@@ -400,6 +400,36 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
 
     wb.save(out_path)
 
+def _a1_from_spec(spec: str) -> str:
+    """Usa el parser "COLS:ROW" y toma la esquina superior-izquierda."""
+    a1 = _colblock_to_a1_range(spec)
+    return a1.split(":")[0] if ":" in a1 else a1
+
+def _export_with_excel_com(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
+    """Abre la plantilla con Excel (COM), escribe las celdas mapeadas y guarda como out_path."""
+    import win32com.client as win32
+
+    excel = win32.gencache.EnsureDispatch("Excel.Application")
+    excel.Visible = False
+    excel.DisplayAlerts = False
+
+    wb = excel.Workbooks.Open(template_path, UpdateLinks=0, ReadOnly=False)
+    try:
+        ws = wb.Worksheets(sheet_name) if sheet_name else wb.Worksheets(1)
+
+        for excel_key, spec in EXCEL_MAP.items():
+            ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
+            raw = snapshot.get(ui_key, "")
+            val = "" if raw is None or str(raw).strip() == "" else raw
+
+            addr = _a1_from_spec(spec)
+            ws.Range(addr).Value = val
+
+        wb.SaveAs(out_path, ConflictResolution=2)
+    finally:
+        wb.Close(SaveChanges=False)
+        excel.Quit()
+
 # ---------- FS helpers ----------
 def _safe_id(s: str) -> str:
     return str(s).replace("/", "_").replace("\\", "_").strip()
@@ -1121,7 +1151,13 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # 4) Exportar a plantilla usando el EXCEL_MAP
                 #    Si tu plantilla usa una hoja específica, pásala por 'sheet_name="NombreHoja"'
-                _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
+                try:
+                    if sys.platform.startswith("win"):
+                        _export_with_excel_com(snapshot=snap_clean, out_path=path, template_path=template_path)
+                    else:
+                        _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
+                except ImportError:
+                    _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
 
                 messagebox.showinfo("Exportar Excel", f"Archivo generado correctamente:\n{path}")
             except ModuleNotFoundError:
