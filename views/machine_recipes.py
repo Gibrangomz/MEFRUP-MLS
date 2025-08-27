@@ -332,12 +332,42 @@ def _anchor_address(ws, addr: str) -> str:
                 return f"{get_column_letter(min_col)}{min_row}"
     return addr
 
+# Bloques del template que queremos dejar en blanco si no hay dato en UI
+CLEAR_BLOCKS = [
+    "D4:G6",   # program/mould/material (entradas)
+    "K4:O6",   # date/cavities/machine
+    "J9:J9",   # Screw Ø [mm]
+    "N8:O21",  # Key data
+    "G11:I15", # Injection table
+    "F18:F20", # Plasticizing
+    "F23:H23","F24:H24", # Holding pressure
+    "D27:H29", # Temperatures
+    "E31:H33", # Opening
+    "K31:N33", # Closing
+    "D37:D37", # Clamping
+]
+
+def _clear_blocks(ws, blocks):
+    """Limpia (pone None) sólo en la celda ancla si hay merges."""
+    seen = set()
+    for block in blocks:
+        a1 = _colblock_to_a1_range(block)
+        min_c, min_r, max_c, max_r = range_boundaries(a1)
+        for col in range(min_c, max_c + 1):
+            for row in range(min_r, max_r + 1):
+                coord = f"{get_column_letter(col)}{row}"
+                anchor = _anchor_address(ws, coord)
+                if anchor not in seen:
+                    ws[anchor].value = None
+                    seen.add(anchor)
+
 def _to_excel_value(excel_key: str, ui_key: str, raw_val):
     s = "" if raw_val is None else str(raw_val).strip()
-    if s == "" or s.replace("0", "").replace(".", "") == "":
-        return None
-    keys = {excel_key, ui_key}
-    if any(k in NUM_FIELDS for k in keys):
+    if s == "":
+        return None  # celda en blanco si no diste valor
+
+    # numérico si el campo es numérico
+    if any(k in NUM_FIELDS for k in (excel_key, ui_key)):
         try:
             s2 = s.replace(",", "")
             v = float(s2)
@@ -353,18 +383,20 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
     """
     from openpyxl import load_workbook
 
-    wb = load_workbook(template_path, data_only=False, keep_vba=False)
+    keep_vba = template_path.lower().endswith((".xlsm", ".xlsb"))
+    # ¡Clave!: keep_links=True para que Excel no “repairs externalLink”
+    wb = load_workbook(template_path, data_only=False, keep_vba=keep_vba, keep_links=True)
     ws = wb[sheet_name] if (sheet_name and sheet_name in wb.sheetnames) else wb.active
 
-    # Escribe todos los campos mapeados
+    # 1) Limpia bloques del template (así no quedan ceros por defecto)
+    _clear_blocks(ws, CLEAR_BLOCKS)
+
+    # 2) Escribe sólo lo que tú llenaste en la UI
     for excel_key, spec in EXCEL_MAP.items():
         ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
         val = snapshot.get(ui_key, "")
-        target = _anchor_address(ws, spec)
+        target = _anchor_address(ws, spec)        # resuelve merges y "COLS:ROW"
         ws[target].value = _to_excel_value(excel_key, ui_key, val)
-
-    # Si quieres estampar fecha/hora o versión en alguna celda, puedes hacerlo aquí (opcional):
-    # ej: ws["H2"].value = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     wb.save(out_path)
 
