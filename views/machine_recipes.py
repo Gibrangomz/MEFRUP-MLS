@@ -425,7 +425,11 @@ def _export_with_excel_com(snapshot: dict, out_path: str, template_path: str, sh
             addr = _a1_from_spec(spec)
             ws.Range(addr).Value = val
 
-        wb.SaveAs(out_path, ConflictResolution=2)
+        # Especificar el formato explícitamente evita que Excel guarde
+        # archivos corruptos (p.ej. BIFF2) cuando no se indica FileFormat.
+        # 51 = xlOpenXMLWorkbook (.xlsx), 52 = xlOpenXMLWorkbookMacroEnabled (.xlsm)
+        fmt = 52 if out_path.lower().endswith((".xlsm", ".xlsb")) else 51
+        wb.SaveAs(Filename=out_path, FileFormat=fmt, ConflictResolution=2)
     finally:
         wb.Close(SaveChanges=False)
         excel.Quit()
