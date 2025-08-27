@@ -376,15 +376,6 @@ def _to_excel_value(excel_key: str, ui_key: str, raw_val):
             pass
     return _safe_excel(s)
 
-
-def _strip_external_links_and_drawings(wb):
-    """Remove external links and drawings to avoid Excel repair prompts."""
-    if getattr(wb, "_external_links", None):
-        wb._external_links = []
-    for ws in wb.worksheets:
-        ws._rels = [r for r in ws._rels if "drawing" not in getattr(r, "Type", "")]
-        ws._drawing = None
-
 def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
     """
     Abre la plantilla y escribe los valores según EXCEL_MAP en la hoja indicada (o activa).
@@ -407,7 +398,6 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
         target = _anchor_address(ws, spec)        # resuelve merges y "COLS:ROW"
         ws[target].value = _to_excel_value(excel_key, ui_key, val)
 
-    _strip_external_links_and_drawings(wb)
     wb.save(out_path)
 
 def _a1_from_spec(spec: str) -> str:
