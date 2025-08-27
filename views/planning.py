@@ -228,17 +228,16 @@ class PlanningMilestonesView(ctk.CTkFrame):
         qty=parse_int_str(self.e_dqty.get().strip(),0)
         if not (due and qty>0):
             messagebox.showwarning("Milestone","Captura fecha y cantidad (>0)."); return
-        # restricción: no más que producción total del molde
+        # restricción: no más que la cantidad total de la orden
         orden_row = next((r for r in leer_csv_dict(PLANNING_CSV) if r.get("orden")==orden), None)
         if not orden_row:
             messagebox.showwarning("Orden","No se encontró la orden."); return
-        molde = orden_row.get("molde_id","").strip()
-        producido = producido_por_molde_global(molde)  # total producido del molde
+        qty_total = parse_int_str(orden_row.get("qty_total","0"))
         miles=[r for r in leer_csv_dict(DELIV_CSV) if r.get("orden")==orden]
         ya_prog = sum(parse_int_str(r.get("qty","0")) for r in miles)
-        if qty + ya_prog > producido:
+        if qty + ya_prog > qty_total:
             messagebox.showwarning("Restricción",
-                f"No puedes programar {qty} pzs. Ya hay {ya_prog} pzs en milestones y la producción total del molde es {producido} pzs.")
+                f"No puedes programar {qty} pzs. Ya hay {ya_prog} pzs en milestones y la orden es de {qty_total} pzs.")
             return
         # append
         with open(DELIV_CSV,"a",newline="",encoding="utf-8") as f:
