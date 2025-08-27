@@ -3,6 +3,8 @@
 from .base import *  # ctk, tk, ttk, messagebox, filedialog, BASE_DIR
 import os, json, csv, sys, re
 from datetime import datetime
+from openpyxl.utils import range_boundaries, get_column_letter
+from openpyxl.cell.cell import MergedCell
 
 # ---------- Paths ----------
 RECIPES_DIR = os.path.join(BASE_DIR, "machine_recipes")
@@ -85,6 +87,31 @@ def _to_excel_value(key: str, raw_val):
     # texto (sanitizado)
     return _safe_excel(s)
 
+def _anchor_address(ws, addr: str) -> str:
+    """
+    Devuelve la coordenada superior-izquierda si 'addr' cae dentro
+    de un rango combinado o si 'addr' ya es un rango (B3:E3).
+    Si no, devuelve 'addr' intacta.
+    """
+    # Si viene como rango, usar su esquina superior-izquierda
+    if ":" in addr:
+        min_col, min_row, max_col, max_row = range_boundaries(addr)
+        return f"{get_column_letter(min_col)}{min_row}"
+
+    # Si es una celda, revisar si es MergedCell (no ancla)
+    try:
+        cell = ws[addr]
+    except Exception:
+        return addr
+
+    if isinstance(cell, MergedCell):
+        # Buscar el rango de merge que la contiene y regresar la ancla
+        for rng in ws.merged_cells.ranges:
+            if cell.coordinate in rng:
+                min_col, min_row, max_col, max_row = range_boundaries(str(rng))
+                return f"{get_column_letter(min_col)}{min_row}"
+    return addr
+
 def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
     """
     Abre la plantilla y escribe los valores según EXCEL_MAP en la hoja indicada (o activa).
@@ -98,7 +125,8 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
     # Escribe todos los campos mapeados
     for fid, cell_addr in EXCEL_MAP.items():
         val = snapshot.get(fid, "")
-        ws[cell_addr].value = _to_excel_value(fid, val)
+        target = _anchor_address(ws, cell_addr)   # <<--- NUEVO: resuelve ancla del merge
+        ws[target].value = _to_excel_value(fid, val)
 
     # Si quieres estampar fecha/hora o versión en alguna celda, puedes hacerlo aquí (opcional):
     # ej: ws["H2"].value = datetime.now().strftime("%Y-%m-%d %H:%M")
