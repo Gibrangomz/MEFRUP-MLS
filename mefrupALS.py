@@ -14,7 +14,7 @@ from csv_utils import *
 from metrics import *
 
 from views.recipes import RecipesView
-from views.machine_recipes import MachineRecipesView
+from views.machine_recipes_panel import MachineRecipesView
 from views.machine_chooser import MachineChooser
 from views.oee_view import OEEView
 from views.live_dashboard import LiveDashboard
