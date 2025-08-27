@@ -495,41 +495,64 @@ def _a1_from_spec(spec: str) -> str:
     a1 = _colblock_to_a1_range(spec)
     return a1.split(":")[0] if ":" in a1 else a1
 
+def _normalize_win_path(p: str) -> str:
+    """Normaliza rutas en Windows: absolutas, con barras '\\' y sin espacios/puntos finales."""
+    p = os.path.abspath(p).replace("/", "\\")
+    return p.rstrip(" .")
+
 def _export_with_excel_com(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
+    import tempfile, shutil, uuid
+    import pywintypes  # viene con pywin32
+
+    # --- normaliza y asegura carpeta destino ---
+    out_path = _normalize_win_path(out_path)
+    dest_dir = os.path.dirname(out_path)
+    os.makedirs(dest_dir, exist_ok=True)
+
     excel = win32.gencache.EnsureDispatch("Excel.Application")
     excel.Visible = False
     excel.DisplayAlerts = False
     excel.AskToUpdateLinks = False
 
-    # Abrir sin actualizar vínculos externos ni cálculo pesado
     wb = excel.Workbooks.Open(template_path, UpdateLinks=0, ReadOnly=False, CorruptLoad=0)
     try:
         excel.Calculation = -4135  # xlCalculationManual
         wb.CheckCompatibility = False
-        try:
-            wb.ForceFullCalculation = False
-        except Exception:
-            pass
 
         ws = wb.Worksheets(sheet_name) if sheet_name else wb.Worksheets(1)
-        try:
-            excel.ActiveWindow.DisplayZeros = False
-        except Exception:
-            pass
 
         for excel_key, spec in EXCEL_MAP.items():
             ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
             raw = snapshot.get(ui_key, "")
             val = "" if raw is None or str(raw).strip() == "" else raw
-            addr = _a1_from_spec(spec)        # top-left del merge
+            addr = _a1_from_spec(spec)
             ws.Range(addr).Value = val
 
-        # Guardar como .xlsx explícito (51); .xlsm (52) si quieres macro
-        fmt = 52 if out_path.lower().endswith((".xlsm", ".xlsb")) else 51
-        wb.SaveAs(Filename=out_path, FileFormat=fmt, ConflictResolution=2)
-    finally:
-        wb.Close(SaveChanges=False)
+        # --- guardado robusto: a %TEMP% y luego mover ---
+        ext = ".xlsm" if out_path.lower().endswith((".xlsm", ".xlsb")) else ".xlsx"
+        fmt = 52 if ext == ".xlsm" else 51
+        tmp_path = os.path.join(tempfile.gettempdir(), f"~export_{uuid.uuid4().hex}{ext}")
+
+        wb.SaveAs(Filename=tmp_path, FileFormat=fmt, ConflictResolution=2)
+
+    except pywintypes.com_error as e:
+        try:
+            wb.Close(SaveChanges=False)
+        except Exception:
+            pass
         excel.Quit()
+        raise
+
+    wb.Close(SaveChanges=False)
+    excel.Quit()
+
+    try:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+    except PermissionError:
+        # si está bloqueado, intenta sobreescritura atómica
+        pass
+    shutil.move(tmp_path, out_path)
 
 # ---------- FS helpers ----------
 def _safe_id(s: str) -> str:
@@ -1252,6 +1275,8 @@ class MachineRecipesView(ctk.CTkFrame):
 
                 # 4) Exportar a plantilla usando el EXCEL_MAP
                 if sys.platform.startswith("win") and HAS_EXCEL_COM:
+                    # normaliza ruta destino (por si el diálogo devuelve barras '/')
+                    path = _normalize_win_path(path)
                     _export_with_excel_com(snapshot=snap_clean, out_path=path, template_path=template_path)
                 else:
                     # Aviso explícito: sin COM Excel podría meter reparaciones; usamos fallback seguro
