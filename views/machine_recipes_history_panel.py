@@ -7,6 +7,7 @@ from .machine_recipes_constants import (
     _load_json,
     _save_version_snapshot,
     _load_version_snapshot,
+    _find_excel_template,
 )
 import json, os, sys
 
