@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 from .base import *  # ctk, tk, ttk, messagebox, filedialog
 from .machine_recipes_constants import *
+from .machine_recipes_constants import (
+    _versions_dir,
+    _list_versions,
+    _load_json,
+    _save_version_snapshot,
+    _load_version_snapshot,
+)
 import json, os, sys
 
 def open_history(view):

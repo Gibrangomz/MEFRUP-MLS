@@ -3,6 +3,11 @@ from .base import *  # ctk, tk, ttk, messagebox, filedialog, BASE_DIR
 import os, json, csv, sys, re
 from datetime import datetime
 from .machine_recipes_constants import *
+from .machine_recipes_constants import (
+    _load_json,
+    _save_json,
+    _save_version_snapshot,
+)
 from .machine_recipes_history_panel import open_history
 
 class MachineRecipesView(ctk.CTkFrame):
