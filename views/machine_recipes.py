@@ -21,6 +21,8 @@ EXCEL_MAP = {
     "plasticising_flow_kgh": "E16", "dosage_capacity_gs": "E17", "dosage_volume_ccm": "E18",
     "material_cushion_ccm": "E19", "max_inj_pressure_bar": "E20",
 }
+# Nota: para cubrir Injection / Plasticizing / Holding / Temperatures /
+# Movements / Clamping, amplía este mapa con las celdas correspondientes.
 
 NUM_FIELDS = {
     "cycle_time_s","injection_time_s","holding_press_time_s","rem_cooling_time_s",
@@ -46,6 +48,62 @@ NUM_FIELDS = {
     "close_force_1","close_force_2","close_force_3",
     "mould_closed_kn",
 }
+
+# ---------- Template Excel (formato predefinido) ----------
+# Intenta estas rutas en orden; usa la primera que exista.
+TEMPLATE_CANDIDATES = [
+    os.path.join(BASE_DIR, "formatorecta.xlsx"),
+    os.path.join(RECIPES_DIR, "formatorecta.xlsx"),
+    os.path.join(BASE_DIR, "assets", "formatorecta.xlsx"),
+    "/mnt/data/formatorecta.xlsx",  # por si ya lo tienes ahí
+]
+
+def _find_excel_template():
+    for p in TEMPLATE_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    return None
+
+def _to_excel_value(key: str, raw_val):
+    """
+    Convierte a número si el campo es numérico. Si no se puede, deja texto.
+    Limpia caracteres ilegales para Excel.
+    """
+    s = "" if raw_val is None else str(raw_val).strip()
+    if key in NUM_FIELDS:
+        # intenta número (permite coma como separador de miles y punto decimal)
+        try:
+            s2 = s.replace(",", "")
+            if s2 == "":
+                return None
+            v = float(s2)
+            # si es entero puro, déjalo como int
+            return int(v) if abs(v - int(v)) < 1e-12 else v
+        except Exception:
+            # si no parsea como número, escribe como texto para no perder el dato
+            pass
+    # texto (sanitizado)
+    return _safe_excel(s)
+
+def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
+    """
+    Abre la plantilla y escribe los valores según EXCEL_MAP en la hoja indicada (o activa).
+    Mantiene estilos/formatos del template.
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(template_path, data_only=False, keep_vba=False)
+    ws = wb[sheet_name] if (sheet_name and sheet_name in wb.sheetnames) else wb.active
+
+    # Escribe todos los campos mapeados
+    for fid, cell_addr in EXCEL_MAP.items():
+        val = snapshot.get(fid, "")
+        ws[cell_addr].value = _to_excel_value(fid, val)
+
+    # Si quieres estampar fecha/hora o versión en alguna celda, puedes hacerlo aquí (opcional):
+    # ej: ws["H2"].value = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    wb.save(out_path)
 
 # ---------- FS helpers ----------
 def _safe_id(s: str) -> str:
@@ -729,193 +787,51 @@ class MachineRecipesView(ctk.CTkFrame):
                 return
             ver = tree.item(sel[0], "values")[0]
             ver_label = f"V.{ver[1:]}" if str(ver).lower().startswith("v") else str(ver)
-            title_txt = f"Receta {ver_label}"
-            path = filedialog.asksaveasfilename(defaultextension=".xlsx",
-                                                filetypes=[("Excel", "*.xlsx")],
-                                                initialfile=f"{self.current_mold}_{ver}.xlsx")
+
+            # 1) Elegir dónde guardar
+            default_name = f"{self.current_mold}_{ver}.xlsx"
+            path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel", "*.xlsx")],
+                initialfile=default_name
+            )
             if not path:
                 return
+
             try:
-                from openpyxl import Workbook
-                from openpyxl.styles import Font, Alignment, Border, Side, PatternFill, NamedStyle
-                from openpyxl.drawing.image import Image as XLImage
+                # 2) Encontrar plantilla
+                template_path = _find_excel_template()
+                if not template_path:
+                    # Si no está, deja elegirla manualmente una sola vez
+                    messagebox.showwarning(
+                        "Plantilla no encontrada",
+                        "No encontré 'formatorecta.xlsx' en las rutas conocidas.\n"
+                        "Selecciona la plantilla (se usará esta vez):"
+                    )
+                    template_path = filedialog.askopenfilename(
+                        title="Selecciona formatorecta.xlsx",
+                        filetypes=[("Excel", "*.xlsx")]
+                    )
+                    if not template_path:
+                        return
 
-                snap = dict(last_snap); _ = snap.pop("_meta", {})
-                wb = Workbook(); ws = wb.active; ws.title = ver_label
+                # 3) Obtener snapshot del árbol (la versión seleccionada)
+                snap = _load_version_snapshot(self.current_mold, ver)
+                if not snap:
+                    messagebox.showwarning("Exportar Excel", "No se pudo cargar el snapshot de la versión.")
+                    return
+                # Limpia metadatos para que solo queden campos
+                snap_clean = dict(snap)
+                snap_clean.pop("_meta", None)
 
-                # Estilos
-                thin = Side(style="thin", color="000000")
-                border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                head_fill = PatternFill("solid", start_color="DBEAFE", end_color="DBEAFE")
+                # 4) Exportar a plantilla usando el EXCEL_MAP
+                #    Si tu plantilla usa una hoja específica, pásala por 'sheet_name="NombreHoja"'
+                _export_snapshot_to_template(snapshot=snap_clean, out_path=path, template_path=template_path)
 
-                head = NamedStyle(name="head")
-                head.font = Font(bold=True)
-                head.alignment = Alignment(horizontal="left", vertical="center")
-                head.border = border; head.fill = head_fill
-                if "head" not in wb.named_styles:
-                    wb.add_named_style(head)
-
-                val = NamedStyle(name="val")
-                val.font = Font(bold=False)
-                val.alignment = Alignment(horizontal="center", vertical="center")
-                val.border = border
-                if "val" not in wb.named_styles:
-                    wb.add_named_style(val)
-
-                title = NamedStyle(name="title")
-                title.font = Font(bold=True, size=16, color="FFFFFF")
-                title.alignment = Alignment(horizontal="center", vertical="center")
-                title.border = border
-                title.fill = PatternFill("solid", start_color="1D4ED8", end_color="1D4ED8")
-                if "title" not in wb.named_styles:
-                    wb.add_named_style(title)
-
-                # Anchos A..N
-                widths = [16,18,18,14,14,14,14,16,16,16,16,16,16,18]
-                for i, w in enumerate(widths, start=1):
-                    ws.column_dimensions[chr(64+i)].width = w
-
-                # Logo opcional
-                if os.path.exists(LOGO_PATH):
-                    try:
-                        img = XLImage(LOGO_PATH); img.height = 40; img.width = 140
-                        ws.add_image(img, "N1")
-                    except Exception:
-                        pass
-
-                def put(r, c, text, style="val"):
-                    cell = ws.cell(row=r, column=c, value=_safe_excel(text))
-                    cell.style = style
-                    return cell
-
-                def mput(r1, c1, r2, c2, text="", style="val"):
-                    ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
-                    for rr in range(r1, r2 + 1):
-                        for cc in range(c1, c2 + 1):
-                            ws.cell(row=rr, column=cc).style = style
-                    ws.cell(row=r1, column=c1, value=_safe_excel(text))
-
-                # Título + Cabecera
-                ws.row_dimensions[1].height = 28
-                mput(1, 1, 1, 14, title_txt, "title")
-                put(2, 1, "Program", "head");        mput(2, 2, 2, 5,  snap.get("program", ""))
-                put(2, 6, "Date of entry:", "head"); mput(2, 7, 2, 14, snap.get("date_of_entry", ""))
-                put(3, 1, "Mould desig.", "head");   mput(3, 2, 3, 5,  snap.get("mould_desig", ""))
-                put(3, 6, "Cavities", "head");       mput(3, 7, 3, 14, snap.get("cavities", ""))
-                put(4, 1, "Material", "head");       mput(4, 2, 4, 5,  snap.get("material", ""))
-                put(4, 6, "Machine", "head");        mput(4, 7, 4, 14, snap.get("machine", ""))
-                mput(5, 1, 5, 14, "")
-
-                # Injection unit
-                mput(6, 1, 6, 14, "Injection unit", "head")
-                put(7,4,"Screw Ø [mm]","head"); put(7,6, snap.get("screw_d_mm",""))
-                put(7,7,"Pcs. 1","head");       put(7,8, snap.get("pcs_1",""))
-
-                # Key data (H..N)
-                start = 8
-                mput(start-1, 8, start-1, 14, "Key data", "head")
-                kd = [
-                    ("Cycle time [s]", "cycle_time_s"),
-                    ("Injection time [s]", "injection_time_s"),
-                    ("Holding press. time [s]", "holding_press_time_s"),
-                    ("Rem. cooling time [s]", "rem_cooling_time_s"),
-                    ("Dosage time [s]", "dosage_time_s"),
-                    ("Screw stroke [mm]", "screw_stroke_mm"),
-                    ("Mould stroke [mm]", "mould_stroke_mm"),
-                    ("Ejector stroke [mm]", "ejector_stroke_mm"),
-                    ("Shot weight [g]", "shot_weight_g"),
-                    ("Plasticising flow [kg/h]", "plasticising_flow_kgh"),
-                    ("Dosage capacity [g/s]", "dosage_capacity_gs"),
-                    ("Dosage volume [ccm]", "dosage_volume_ccm"),
-                    ("Material cushion [ccm]", "material_cushion_ccm"),
-                    ("max. inj. pressure [bar]", "max_inj_pressure_bar"),
-                ]
-                rr = start
-                for label, fid in kd:
-                    put(rr,8,label,"head")
-                    mput(rr, 9, rr, 14, snap.get(fid, ""))
-                    rr += 1
-
-                # Injection (A..G)
-                injstart = start
-                mput(injstart-1, 1, injstart-1, 7, "Injection", "head")
-
-                def triple(r, label, a,b,c):
-                    put(r,1,label,"head")
-                    put(r,3, snap.get(a,"")); put(r,4, snap.get(b,"")); put(r,5, snap.get(c,""))
-
-                triple(injstart+0, "Injection press. limiting [bar]", "inj_press_lim_1","inj_press_lim_2","inj_press_lim_3")
-                triple(injstart+1, "Injection speed [mm/s]",          "inj_speed_1","inj_speed_2","inj_speed_3")
-                triple(injstart+2, "End of stage [mm]",               "inj_end_stage_mm_1","inj_end_stage_mm_2","inj_end_stage_mm_3")
-                triple(injstart+3, "Injection flow [ccm/s]",          "inj_flow_1","inj_flow_2","inj_flow_3")
-                triple(injstart+4, "End of stage [ccm]",              "inj_end_stage_ccm_1","inj_end_stage_ccm_2","inj_end_stage_ccm_3")
-
-                # Plasticizing
-                plr = rr + 1
-                mput(plr, 1, plr, 7, "Plasticizing (St.1)", "head")
-                put(plr+1,1,"Screw speed [m/min]","head")
-                mput(plr+1, 3, plr+1, 5, snap.get("plast_screw_speed", ""))
-                put(plr+2,1,"Back pressure [bar]","head")
-                mput(plr+2, 3, plr+2, 5, snap.get("plast_back_pressure", ""))
-                put(plr+3,1,"End of stage [ccm]","head")
-                mput(plr+3, 3, plr+3, 5, snap.get("plast_end_stage_ccm", ""))
-
-                # Holding pressure
-                hpr = plr + 5
-                mput(hpr, 1, hpr, 7, "Holding pressure (Pcs.2)", "head")
-                put(hpr+1,1,"Time [s]","head")
-                put(hpr+1,3, snap.get("hp_time_1","")); put(hpr+1,4, snap.get("hp_time_2","")); put(hpr+1,5, snap.get("hp_time_3",""))
-                put(hpr+2,1,"Pressure [bar]","head")
-                put(hpr+2,3, snap.get("hp_press_1","")); put(hpr+2,4, snap.get("hp_press_2",""))
-                put(hpr+2,5, snap.get("hp_press_3","")); put(hpr+2,6, snap.get("hp_press_4",""))
-
-                # Temperatures
-                tr = hpr + 4
-                mput(tr, 1, tr, 14, "Temperatures", "head")
-                put(tr+1,1,"Cylinder temp. [°C]","head")
-                for i,k in enumerate(["temp_c1","temp_c2","temp_c3","temp_c4","temp_c5"], start=2):
-                    put(tr+1,i, snap.get(k,""))
-                put(tr+2,1,"Tolerances [°C]","head")
-                for i,k in enumerate(["tol_c1","tol_c2","tol_c3","tol_c4","tol_c5"], start=2):
-                    put(tr+2,i, snap.get(k,""))
-                put(tr+3,1,"Feed yoke temperature [°C]","head"); put(tr+3,2, snap.get("feed_yoke_temp",""))
-                put(tr+4,1,"Lower enable tol. [°C]","head");     put(tr+4,2, snap.get("lower_enable_tol",""))
-                put(tr+4,8,"Upper switch-off tol. [°C]","head");  put(tr+4,9, snap.get("upper_switch_off_tol",""))
-
-                # Opening
-                mor = tr + 6
-                mput(mor, 1, mor, 7, "Mould movements — Opening (St.1 / St.2 / St.3)", "head")
-                put(mor+1,1,"End of stage [mm]","head")
-                put(mor+1,3, snap.get("open_end_mm_1","")); put(mor+1,4, snap.get("open_end_mm_2","")); put(mor+1,5, snap.get("open_end_mm_3",""))
-                put(mor+2,1,"Speed [mm/s]","head")
-                put(mor+2,3, snap.get("open_speed_1","")); put(mor+2,4, snap.get("open_speed_2","")); put(mor+2,5, snap.get("open_speed_3",""))
-                put(mor+3,1,"Force [kN]","head")
-                put(mor+3,3, snap.get("open_force_1","")); put(mor+3,4, snap.get("open_force_2","")); put(mor+3,5, snap.get("open_force_3",""))
-
-                # Closing
-                mcr = mor + 5
-                mput(mcr, 8, mcr, 14, "Mould movements — Closing (St.1 / St.2 / St.3 / An. HD)", "head")
-                put(mcr+1,8,"End of stage [mm]","head")
-                for i,k in enumerate(["close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4"], start=9):
-                    put(mcr+1,i, snap.get(k,""))
-                put(mcr+2,8,"Speed [mm/s]","head")
-                for i,k in enumerate(["close_speed_1","close_speed_2","close_speed_3","close_speed_4"], start=9):
-                    put(mcr+2,i, snap.get(k,""))
-                put(mcr+3,8,"Force [kN]","head")
-                for i,k in enumerate(["close_force_1","close_force_2","close_force_3"], start=9):
-                    put(mcr+3,i, snap.get(k,""))
-
-                # Clamping
-                cl = mcr + 5
-                mput(cl, 1, cl, 5, "Clamping", "head")
-                put(cl+1,1,"Mould closed [kN]","head")
-                mput(cl+1, 3, cl+1, 5, snap.get("mould_closed_kn", ""))
-
-                # Navegación
-                ws.freeze_panes = "A6"
-
-                wb.save(path)
-                messagebox.showinfo("Exportar Excel","Archivo generado correctamente.")
+                messagebox.showinfo("Exportar Excel", f"Archivo generado correctamente:\n{path}")
+            except ModuleNotFoundError:
+                messagebox.showwarning("Dependencia faltante",
+                    "Falta openpyxl para exportar en plantilla:\n\npip install openpyxl")
             except Exception as e:
                 messagebox.showerror("Exportar Excel", f"No se pudo exportar:\n{e}")
 
