@@ -3,7 +3,7 @@
 from .base import *  # ctk, tk, ttk, messagebox, filedialog, BASE_DIR
 import os, json, csv, sys, re
 from datetime import datetime
-from openpyxl.utils import range_boundaries, get_column_letter
+from openpyxl.utils import range_boundaries, get_column_letter, column_index_from_string
 from openpyxl.cell.cell import MergedCell
 
 # ---------- Paths ----------
@@ -15,16 +15,238 @@ DATA_SCHEMA_VERSION = 2
 
 # ---------- Excel helpers ----------
 EXCEL_MAP = {
-    "program": "B3", "mould_desig": "B4", "material": "B5",
-    "date_of_entry": "E3", "cavities": "E4", "machine": "E5",
-    "cycle_time_s": "E7", "injection_time_s": "E8", "holding_press_time_s": "E9",
-    "rem_cooling_time_s": "E10", "dosage_time_s": "E11", "screw_stroke_mm": "E12",
-    "mould_stroke_mm": "E13", "ejector_stroke_mm": "E14", "shot_weight_g": "E15",
-    "plasticising_flow_kgh": "E16", "dosage_capacity_gs": "E17", "dosage_volume_ccm": "E18",
-    "material_cushion_ccm": "E19", "max_inj_pressure_bar": "E20",
+    # ---------- Encabezado ----------
+    "program": "DEFG:4",
+    "mould_desig": "DEFG:5",
+    "material": "DEFG:6",
+    "date_of_entry": "KLMNO:4",
+    "cavities": "KLMNO:5",
+    "machine": "KLMNO:6",
+
+    # ---------- Injection unit / Key data (superior) ----------
+    "screw_diameter_mm": "J:9",
+
+    # Key data (N–O)
+    "cycle_time_s": "NO:8",
+    "injection_time_s": "NO:9",
+    "holding_press_time_s": "NO:10",
+    "rem_cooling_time_s": "NO:11",
+    "dosage_time_s": "NO:12",
+    "screw_stroke_mm": "NO:13",
+    "mould_stroke_mm": "NO:14",
+    "ejector_stroke_mm": "NO:15",
+    "shot_weight_g": "NO:16",
+    "plasticising_flow_kg_h": "NO:17",
+    "dosage_capacity_g_s": "NO:18",
+    "dosage_volume_ccm": "NO:19",
+    "material_cushion_ccm": "NO:20",
+    "max_injection_pressure_bar": "NO:21",
+
+    # ---------- Injection (filas 11–15) ----------
+    "inj_press_limit_bar_1": "I:11",
+    "inj_press_limit_bar_2": "H:11",
+    "inj_press_limit_bar_3": "G:11",
+
+    "injection_speed_1": "I:12",
+    "injection_speed_2": "H:12",
+    "injection_speed_3": "G:12",
+
+    "end_of_stage_mm_1": "I:13",
+    "end_of_stage_mm_2": "H:13",
+    "end_of_stage_mm_3": "G:13",
+
+    "injection_flow_ccm_s_1": "I:14",
+    "injection_flow_ccm_s_2": "H:14",
+    "injection_flow_ccm_s_3": "G:14",
+
+    "end_of_stage_ccm_1": "I:15",
+    "end_of_stage_ccm_2": "H:15",
+    "end_of_stage_ccm_3": "G:15",
+
+    # ---------- Plasticizing (filas 18–20) ----------
+    "screw_speed_m_min_1": "F:18",
+    "back_pressure_bar": "F:19",
+    "plasticizing_end_stage_ccm": "F:20",
+
+    # ---------- Holding pressure (filas 23–24) ----------
+    "hold_time_s_1": "F:23",
+    "hold_time_s_2": "G:23",
+    "hold_time_s_3": "H:23",
+
+    "hold_pressure_bar_1": "F:24",
+    "hold_pressure_bar_2": "G:24",
+    "hold_pressure_bar_3": "H:24",
+
+    # ---------- Temperatures (filas 27–29) ----------
+    "cylinder_temp_c_1": "D:27",
+    "cylinder_temp_c_2": "E:27",
+    "cylinder_temp_c_3": "F:27",
+    "cylinder_temp_c_4": "G:27",
+    "cylinder_temp_c_5": "H:27",
+
+    "tolerance_c_1": "D:28",
+    "tolerance_c_2": "E:28",
+    "tolerance_c_3": "F:28",
+    "tolerance_c_4": "G:28",
+    "tolerance_c_5": "H:28",
+
+    "feed_yoke_temp_c": "D:29",
+    "lower_enable_tol_c": "J:30",
+    "upper_switch_off_tol_c": "M:31",
+
+    # ---------- Mould movements (31–33) ----------
+    # Opening
+    "opening_end_stage_mm_1": "H:31",
+    "opening_end_stage_mm_2": "G:31",
+    "opening_end_stage_mm_3": "F:31",
+    "opening_end_stage_mm_4": "E:31",
+
+    "opening_speed_mm_s_1": "H:32",
+    "opening_speed_mm_s_2": "G:32",
+    "opening_speed_mm_s_3": "F:32",
+    "opening_speed_mm_s_4": "E:32",
+
+    "opening_force_kN_1": "H:33",
+    "opening_force_kN_2": "G:33",
+    "opening_force_kN_3": "F:33",
+    "opening_force_kN_4": "E:33",
+
+    # Closing
+    "closing_end_stage_mm_1": "N:31",
+    "closing_end_stage_mm_2": "M:31",
+    "closing_end_stage_mm_3": "L:31",
+    "closing_end_stage_mm_4": "K:31",
+
+    "closing_speed_mm_s_1": "N:32",
+    "closing_speed_mm_s_2": "M:32",
+    "closing_speed_mm_s_3": "L:32",
+    "closing_speed_mm_s_4": "K:32",
+
+    "closing_force_kN_1": "N:33",
+    "closing_force_kN_2": "M:33",
+    "closing_force_kN_3": "L:33",
+    "closing_force_kN_4": "K:33",
+
+    # ---------- Clamping ----------
+    "mould_closed_kN": "D:37",
 }
-# Nota: para cubrir Injection / Plasticizing / Holding / Temperatures /
-# Movements / Clamping, amplía este mapa con las celdas correspondientes.
+
+# (B) Traducción Excel ↔ UI (alias de claves)
+
+ALIAS_EXCEL_TO_UI = {
+    # Encabezado
+    "program": "program",
+    "mould_desig": "mould_desig",
+    "material": "material",
+    "date_of_entry": "date_of_entry",
+    "cavities": "cavities",
+    "machine": "machine",
+
+    # Injection unit / key data
+    "screw_diameter_mm": "screw_d_mm",
+
+    "cycle_time_s": "cycle_time_s",
+    "injection_time_s": "injection_time_s",
+    "holding_press_time_s": "holding_press_time_s",
+    "rem_cooling_time_s": "rem_cooling_time_s",
+    "dosage_time_s": "dosage_time_s",
+    "screw_stroke_mm": "screw_stroke_mm",
+    "mould_stroke_mm": "mould_stroke_mm",
+    "ejector_stroke_mm": "ejector_stroke_mm",
+    "shot_weight_g": "shot_weight_g",
+    "plasticising_flow_kg_h": "plasticising_flow_kgh",
+    "dosage_capacity_g_s": "dosage_capacity_gs",
+    "dosage_volume_ccm": "dosage_volume_ccm",
+    "material_cushion_ccm": "material_cushion_ccm",
+    "max_injection_pressure_bar": "max_inj_pressure_bar",
+
+    # Injection
+    "inj_press_limit_bar_1": "inj_press_lim_1",
+    "inj_press_limit_bar_2": "inj_press_lim_2",
+    "inj_press_limit_bar_3": "inj_press_lim_3",
+
+    "injection_speed_1": "inj_speed_1",
+    "injection_speed_2": "inj_speed_2",
+    "injection_speed_3": "inj_speed_3",
+
+    "end_of_stage_mm_1": "inj_end_stage_mm_1",
+    "end_of_stage_mm_2": "inj_end_stage_mm_2",
+    "end_of_stage_mm_3": "inj_end_stage_mm_3",
+
+    "injection_flow_ccm_s_1": "inj_flow_1",
+    "injection_flow_ccm_s_2": "inj_flow_2",
+    "injection_flow_ccm_s_3": "inj_flow_3",
+
+    "end_of_stage_ccm_1": "inj_end_stage_ccm_1",
+    "end_of_stage_ccm_2": "inj_end_stage_ccm_2",
+    "end_of_stage_ccm_3": "inj_end_stage_ccm_3",
+
+    # Plasticizing
+    "screw_speed_m_min_1": "plast_screw_speed",
+    "back_pressure_bar": "plast_back_pressure",
+    "plasticizing_end_stage_ccm": "plast_end_stage_ccm",
+
+    # Holding pressure
+    "hold_time_s_1": "hp_time_1",
+    "hold_time_s_2": "hp_time_2",
+    "hold_time_s_3": "hp_time_3",
+
+    "hold_pressure_bar_1": "hp_press_1",
+    "hold_pressure_bar_2": "hp_press_2",
+    "hold_pressure_bar_3": "hp_press_3",
+
+    # Temperatures
+    "cylinder_temp_c_1": "temp_c1",
+    "cylinder_temp_c_2": "temp_c2",
+    "cylinder_temp_c_3": "temp_c3",
+    "cylinder_temp_c_4": "temp_c4",
+    "cylinder_temp_c_5": "temp_c5",
+
+    "tolerance_c_1": "tol_c1",
+    "tolerance_c_2": "tol_c2",
+    "tolerance_c_3": "tol_c3",
+    "tolerance_c_4": "tol_c4",
+    "tolerance_c_5": "tol_c5",
+
+    "feed_yoke_temp_c": "feed_yoke_temp",
+    "lower_enable_tol_c": "lower_enable_tol",
+    "upper_switch_off_tol_c": "upper_switch_off_tol",
+
+    # Movements Opening
+    "opening_end_stage_mm_1": "open_end_mm_1",
+    "opening_end_stage_mm_2": "open_end_mm_2",
+    "opening_end_stage_mm_3": "open_end_mm_3",
+    "opening_end_stage_mm_4": "open_end_mm_4",
+
+    "opening_speed_mm_s_1": "open_speed_1",
+    "opening_speed_mm_s_2": "open_speed_2",
+    "opening_speed_mm_s_3": "open_speed_3",
+    "opening_speed_mm_s_4": "open_speed_4",
+
+    "opening_force_kN_1": "open_force_1",
+    "opening_force_kN_2": "open_force_2",
+    "opening_force_kN_3": "open_force_3",
+    "opening_force_kN_4": "open_force_4",
+
+    # Movements Closing
+    "closing_end_stage_mm_1": "close_end_mm_1",
+    "closing_end_stage_mm_2": "close_end_mm_2",
+    "closing_end_stage_mm_3": "close_end_mm_3",
+    "closing_end_stage_mm_4": "close_end_mm_4",
+
+    "closing_speed_mm_s_1": "close_speed_1",
+    "closing_speed_mm_s_2": "close_speed_2",
+    "closing_speed_mm_s_3": "close_speed_3",
+    "closing_speed_mm_s_4": "close_speed_4",
+
+    "closing_force_kN_1": "close_force_1",
+    "closing_force_kN_2": "close_force_2",
+    "closing_force_kN_3": "close_force_3",
+    "closing_force_kN_4": "close_force_4",
+
+    # Clamping
+    "mould_closed_kN": "mould_closed_kn",
+}
 
 NUM_FIELDS = {
     "cycle_time_s","injection_time_s","holding_press_time_s","rem_cooling_time_s",
@@ -42,16 +264,16 @@ NUM_FIELDS = {
     "temp_c1","temp_c2","temp_c3","temp_c4","temp_c5",
     "tol_c1","tol_c2","tol_c3","tol_c4","tol_c5",
     "feed_yoke_temp","lower_enable_tol","upper_switch_off_tol",
-    "open_end_mm_1","open_end_mm_2","open_end_mm_3",
-    "open_speed_1","open_speed_2","open_speed_3",
-    "open_force_1","open_force_2","open_force_3",
+    "open_end_mm_1","open_end_mm_2","open_end_mm_3","open_end_mm_4",
+    "open_speed_1","open_speed_2","open_speed_3","open_speed_4",
+    "open_force_1","open_force_2","open_force_3","open_force_4",
     "close_end_mm_1","close_end_mm_2","close_end_mm_3","close_end_mm_4",
     "close_speed_1","close_speed_2","close_speed_3","close_speed_4",
-    "close_force_1","close_force_2","close_force_3",
+    "close_force_1","close_force_2","close_force_3","close_force_4",
     "mould_closed_kn",
 }
 
-# ---------- Template Excel (formato predefinido) ----------
+# === Usa tu plantilla predefinida formatorecta.xlsx ===
 # Intenta estas rutas en orden; usa la primera que exista.
 TEMPLATE_CANDIDATES = [
     os.path.join(BASE_DIR, "formatorecta.xlsx"),
@@ -66,51 +288,63 @@ def _find_excel_template():
             return p
     return None
 
-def _to_excel_value(key: str, raw_val):
+def _colblock_to_a1_range(spec: str) -> str:
     """
-    Convierte a número si el campo es numérico. Si no se puede, deja texto.
-    Limpia caracteres ilegales para Excel.
+    'DEFG:4' -> 'D4:G4' ; 'NO:8' -> 'N8:O8' ; 'J:9' -> 'J9'
+    Si ya viene 'A1:D1' u 'A1', lo regresa igual.
     """
+    s = spec.strip().upper()
+    if ":" not in s:
+        return s
+    left, right = s.split(":")
+    # Caso 'A1:D1'
+    if left and left[-1].isdigit():
+        return s
+    # Caso 'COLS:ROW'
+    cols, row = left, right
+    cols = "".join([c for c in cols if c.isalpha()])
+    row = "".join([c for c in row if c.isdigit()])
+    if not cols or not row:
+        return s
+    start = cols[0]
+    end = cols[-1]
+    if start == end:
+        return f"{start}{row}"
+    return f"{start}{row}:{end}{row}"
+
+def _anchor_address(ws, addr: str) -> str:
+    """
+    Devuelve la coordenada superior-izquierda válida para escribir.
+    Soporta celdas simples, rangos 'A1:D1' y nuestro formato 'DEFG:4'.
+    """
+    addr = _colblock_to_a1_range(addr)
+    # Si es rango, usa su esquina superior-izquierda
+    if ":" in addr:
+        min_col, min_row, max_col, max_row = range_boundaries(addr)
+        return f"{get_column_letter(min_col)}{min_row}"
+
+    # Si es celda individual, pero pertenece a un merge -> ancla del merge
+    cell = ws[addr]
+    if isinstance(cell, MergedCell):
+        for rng in ws.merged_cells.ranges:
+            if addr in rng:
+                min_col, min_row, *_ = range_boundaries(str(rng))
+                return f"{get_column_letter(min_col)}{min_row}"
+    return addr
+
+def _to_excel_value(excel_key: str, ui_key: str, raw_val):
     s = "" if raw_val is None else str(raw_val).strip()
-    if key in NUM_FIELDS:
-        # intenta número (permite coma como separador de miles y punto decimal)
+    keys = {excel_key, ui_key}
+    if any(k in NUM_FIELDS for k in keys):
         try:
             s2 = s.replace(",", "")
             if s2 == "":
                 return None
             v = float(s2)
-            # si es entero puro, déjalo como int
             return int(v) if abs(v - int(v)) < 1e-12 else v
         except Exception:
-            # si no parsea como número, escribe como texto para no perder el dato
             pass
-    # texto (sanitizado)
     return _safe_excel(s)
-
-def _anchor_address(ws, addr: str) -> str:
-    """
-    Devuelve la coordenada superior-izquierda si 'addr' cae dentro
-    de un rango combinado o si 'addr' ya es un rango (B3:E3).
-    Si no, devuelve 'addr' intacta.
-    """
-    # Si viene como rango, usar su esquina superior-izquierda
-    if ":" in addr:
-        min_col, min_row, max_col, max_row = range_boundaries(addr)
-        return f"{get_column_letter(min_col)}{min_row}"
-
-    # Si es una celda, revisar si es MergedCell (no ancla)
-    try:
-        cell = ws[addr]
-    except Exception:
-        return addr
-
-    if isinstance(cell, MergedCell):
-        # Buscar el rango de merge que la contiene y regresar la ancla
-        for rng in ws.merged_cells.ranges:
-            if cell.coordinate in rng:
-                min_col, min_row, max_col, max_row = range_boundaries(str(rng))
-                return f"{get_column_letter(min_col)}{min_row}"
-    return addr
 
 def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: str, sheet_name: str | None = None):
     """
@@ -123,10 +357,11 @@ def _export_snapshot_to_template(snapshot: dict, out_path: str, template_path: s
     ws = wb[sheet_name] if (sheet_name and sheet_name in wb.sheetnames) else wb.active
 
     # Escribe todos los campos mapeados
-    for fid, cell_addr in EXCEL_MAP.items():
-        val = snapshot.get(fid, "")
-        target = _anchor_address(ws, cell_addr)   # <<--- NUEVO: resuelve ancla del merge
-        ws[target].value = _to_excel_value(fid, val)
+    for excel_key, spec in EXCEL_MAP.items():
+        ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
+        val = snapshot.get(ui_key, "")
+        target = _anchor_address(ws, spec)
+        ws[target].value = _to_excel_value(excel_key, ui_key, val)
 
     # Si quieres estampar fecha/hora o versión en alguna celda, puedes hacerlo aquí (opcional):
     # ej: ws["H2"].value = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1105,20 +1340,25 @@ class MachineRecipesView(ctk.CTkFrame):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx;*.xlsm;*.xls")])
         if not path: return
         try:
-            wb = load_workbook(path, data_only=True, keep_vba=True); ws = wb.active
+            wb = load_workbook(path, data_only=True, keep_vba=True)
+            ws = wb.active
             hits, misses = 0, 0
-            for fid, cell in EXCEL_MAP.items():
-                try: val = ws[cell].value
-                except Exception: val = None
-                if fid in self.vars and val is not None:
-                    self.vars[fid].set(_cast_numeric(val) if fid in NUM_FIELDS else str(val))
+            for excel_key, spec in EXCEL_MAP.items():
+                ui_key = ALIAS_EXCEL_TO_UI.get(excel_key, excel_key)
+                try:
+                    addr = _anchor_address(ws, spec)
+                    val = ws[addr].value
+                except Exception:
+                    val = None
+                if ui_key in self.vars and val is not None:
+                    self.vars[ui_key].set(_cast_numeric(val) if ui_key in NUM_FIELDS else str(val))
                     hits += 1
                 else:
                     misses += 1
             self._dirty = True
             messagebox.showinfo("Importar",
-                                f"Se mapearon {hits} campo(s). Revisa EXCEL_MAP para cubrir más campos. "
-                                f"Sin valor: {misses}.")
+                                f"Se mapearon {hits} campo(s) desde el Excel.\n"
+                                f"Sin valor o no presente en UI: {misses}.")
         except Exception as e:
             messagebox.showerror("Importar Excel", f"No se pudo leer el archivo:\n{e}")
 
