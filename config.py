@@ -29,14 +29,14 @@ LOGO_PATH = os.path.join(BASE_DIR, "10b41fef-97af-4e79-90c4-b496e0dd3197.png")
 CHART_W = 640
 CHART_H = 360
 
-# planificación y milestones
-PLANNING_CSV = os.path.join(
-    BASE_DIR, "planning.csv"
-)  # orden, parte, molde_id, maquina_id, qty_total, inicio_ts, fin_est_ts, setup_min, estado, ciclo_s, cav_on
-DELIV_CSV = os.path.join(BASE_DIR, "deliveries.csv")  # orden, due_date, qty, cumplido(0/1)
+# Planificación y Milestones
+PLANNING_CSV = os.path.join(BASE_DIR, "planning.csv")
+DELIV_CSV = os.path.join(BASE_DIR, "deliveries.csv")
 
-# NUEVO: salidas / embarques
-SHIPMENTS_CSV = os.path.join(BASE_DIR, "shipments.csv")  # orden, ship_date, qty, destino, nota, approved
+# Salidas / Embarques, Personal y Clientes
+SHIPMENTS_CSV = os.path.join(BASE_DIR, "shipments.csv")
+PERSONNEL_CSV = os.path.join(BASE_DIR, "personnel.csv")
+CLIENTS_CSV = os.path.join(BASE_DIR, "clients.csv")
 
 OPERADORES = ["OPERADOR 1", "OPERADOR 2", "OPERADOR 3"]
 TURNOS_HORAS = {1: 8, 2: 8, 3: 8}
