@@ -1,47 +1,30 @@
 from .base import *
-from metrics import compute_fifo_assignments, order_metrics, mold_metrics, totals_from_fifo
+from metrics import compute_fifo_assignments, order_metrics, mold_metrics, parse_int_str
+from tkinter import simpledialog
 
 class ShipmentsView(ctk.CTkFrame):
     def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent")
-        self.app=app
-        self._tab=None
-        self._ship_filter_status = tk.StringVar(value="Todas")     # filtro en "Por Orden"
-        self._log_filter_status  = tk.StringVar(value="Todas")     # filtro en "Global"
-        self._log_filter_text    = tk.StringVar(value="")
-        self._log_dt_from        = tk.StringVar(value="")
-        self._log_dt_to          = tk.StringVar(value="")
-        self._approve_on_save    = tk.BooleanVar(value=False)      # "Aprobar al guardar"
-        self._selected_order     = ""
-        self._build()
+        super().__init__(master, fg_color=("#F8FAFC", "#0F172A"))
+        self.app = app
+        self._ship_filter_status = tk.StringVar(value="Todas")
+        self._approve_on_save = tk.BooleanVar(value=False)
+        self._selected_order = ""
+        self._note_has_placeholder = True
+        self._build_professional_ui()
 
     # ========== Helpers ==========
     def _shipments_all(self):
-        try: return leer_shipments()
+        try: return leer_csv_dict(config.SHIPMENTS_CSV)
         except Exception: return []
 
-    def _shipments_approved(self):
-        return [r for r in self._shipments_all() if str(r.get("approved","0")).strip()=="1"]
-
-    def _shipments_pending(self):
-        return [r for r in self._shipments_all() if str(r.get("approved","0")).strip()!="1"]
-
     def _status_label(self, r):
-        return "Aprobada" if str(r.get("approved","0")).strip()=="1" else "Pendiente"
-
-    def _sum_qty(self, rows):
-        s=0
-        for r in rows:
-            try: s += int(float(r.get("qty",0) or 0))
-            except: pass
-        return s
+        return "Aprobada" if str(r.get("approved", "0")).strip() == "1" else "Pendiente"
 
     def _calendar_pick(self, entry: ctk.CTkEntry):
         try:
             y,m,d = map(int, (entry.get() or date.today().isoformat()).split("-"))
             init = date(y,m,d)
-        except:
-            init = date.today()
+        except: init = date.today()
         top=tk.Toplevel(self); top.title("Selecciona fecha"); top.transient(self); top.grab_set(); top.resizable(False,False)
         self.update_idletasks()
         top.geometry(f"+{self.winfo_rootx()+self.winfo_width()//2-180}+{self.winfo_rooty()+self.winfo_height()//2-170}")
@@ -54,569 +37,416 @@ class ShipmentsView(ctk.CTkFrame):
         tk.Button(top, text="Cerrar", command=top.destroy).pack(side="left", padx=10, pady=10)
 
     def set_order(self, orden: str):
-        # llamado desde otras vistas para precargar una orden
         try:
             self._om_order.set(orden)
             self._selected_order = orden
-            self._refresh_order_header()
-            self._reload_order_shipments()
-        except:
-            pass
+            self._reload_all()
+        except: pass
 
-    # ========== UI ==========
-    def _build(self):
-        # Header
-        header=ctk.CTkFrame(self, corner_radius=0, fg_color=("white","#111111"))
+    # ========== UI Profesional ==========
+    def _build_professional_ui(self):
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("#FFFFFF", "#1E2B3B"), height=70,
+                              border_width=1, border_color=("#E2E8F0", "#334155"))
         header.pack(fill="x", side="top")
-        left=ctk.CTkFrame(header, fg_color="transparent"); left.pack(side="left", padx=16, pady=10)
-        ctk.CTkButton(left, text="← Menú", command=self.app.go_menu, width=110, corner_radius=10,
-                      fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB").pack(side="left", padx=(0,10))
-        ctk.CTkLabel(left, text="Salidas / Embarques", font=ctk.CTkFont("Helvetica", 20, "bold")).pack(side="left")
-        right=ctk.CTkFrame(header, fg_color="transparent"); right.pack(side="right", padx=16, pady=10)
-        ctk.CTkButton(right, text="↻ Actualizar todo", command=self._reload_all).pack(side="right")
+        header.pack_propagate(False)
 
-        # Tabs
-        tabs = ctk.CTkTabview(self)
-        tabs.pack(fill="both", expand=True, padx=16, pady=16)
-        self._tab = tabs
-        tab_order  = tabs.add("Por Orden")
-        tab_global = tabs.add("Global")
-        tab_analytics = tabs.add("Analytics")
+        header_content = ctk.CTkFrame(header, fg_color="transparent")
+        header_content.pack(fill="both", expand=True, padx=24, pady=12)
 
-        # ===== Tab: Por Orden =====
-        tab_order.grid_columnconfigure(0, weight=1)
-        tab_order.grid_columnconfigure(1, weight=1)
-        tab_order.grid_rowconfigure(2, weight=1)
+        left_section = ctk.CTkFrame(header_content, fg_color="transparent")
+        left_section.pack(side="left", fill="y")
+        ctk.CTkButton(left_section, text="← Menú", command=self.app.go_menu,
+                      width=100, height=36, corner_radius=10, fg_color="#E5E7EB",
+                      text_color="#374151", hover_color="#D1D5DB",
+                      font=ctk.CTkFont("Helvetica", 12, "bold")).pack(side="left")
+        ctk.CTkLabel(left_section, text="🚚 Salidas y Embarques",
+                     font=ctk.CTkFont("Helvetica", 24, "bold"),
+                     text_color=("#1E293B", "#F1F5F9")).pack(side="left", padx=20)
+        
+        right_section = ctk.CTkFrame(header_content, fg_color="transparent")
+        right_section.pack(side="right", fill="y")
+        ctk.CTkButton(right_section, text="🔄 Actualizar Todo", command=self._reload_all,
+                      width=140, height=40, corner_radius=12, fg_color="#3B82F6",
+                      hover_color="#2563EB", font=ctk.CTkFont("Helvetica", 12, "bold")).pack(side="right")
 
-        # Form alta a la izquierda
-        form=ctk.CTkFrame(tab_order, corner_radius=18)
-        form.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0,10))
-        ctk.CTkLabel(form, text="Alta de salida", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=12, pady=(10,6))
-        ctk.CTkFrame(form, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
+        main_container = ctk.CTkFrame(self, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=24, pady=24)
+        main_container.grid_columnconfigure(0, weight=1, minsize=380)
+        main_container.grid_columnconfigure(1, weight=3)
+        main_container.grid_rowconfigure(0, weight=1)
 
-        fr = ctk.CTkFrame(form, fg_color="transparent"); fr.pack(fill="x", padx=12, pady=6)
-        ordenes = [r.get("orden","") for r in leer_csv_dict(PLANNING_CSV)] or ["(elige orden)"]
-        self._om_order = ctk.CTkOptionMenu(fr, values=ordenes, width=150,
-                                           command=lambda _v: (self._on_order_change()))
-        self._om_order.pack(side="left")
-        ctk.CTkButton(fr, text="↻", width=40, command=self._reload_orders_list).pack(side="left", padx=6)
-
-        self._e_date=ctk.CTkEntry(fr, placeholder_text="Fecha (YYYY-MM-DD)", width=170); self._e_date.pack(side="left", padx=(16,6))
-        ctk.CTkButton(fr, text="📅", width=36, command=lambda: self._calendar_pick(self._e_date)).pack(side="left", padx=6)
-        self._e_qty = ctk.CTkEntry(fr, placeholder_text="Cantidad", width=120); self._e_qty.pack(side="left", padx=6)
-        self._e_dest= ctk.CTkEntry(fr, placeholder_text="Destino (opcional)", width=220); self._e_dest.pack(side="left", padx=6)
-        self._e_note= ctk.CTkEntry(fr, placeholder_text="Nota (opcional)", width=220); self._e_note.pack(side="left", padx=6)
-        ctk.CTkCheckBox(fr, text="Aprobar al guardar", variable=self._approve_on_save).pack(side="left", padx=12)
-        ctk.CTkButton(fr, text="Guardar salida", command=self._save_shipment).pack(side="right", padx=(6,0))
-
-        # KPIs/Resumen orden + molde
-        self._lbl_order = ctk.CTkLabel(tab_order, text="—", font=ctk.CTkFont("Helvetica", 13))
-        self._lbl_order.grid(row=1, column=0, sticky="w", padx=6, pady=(0,6))
-        self._lbl_mold  = ctk.CTkLabel(tab_order, text="—", text_color=("#6b7280","#9CA3AF"))
-        self._lbl_mold.grid(row=1, column=1, sticky="e", padx=6, pady=(0,6))
-
-        # Tabla envíos por orden + filtros
-        left=ctk.CTkFrame(tab_order, corner_radius=18); left.grid(row=2, column=0, sticky="nsew", padx=(0,8))
-        left.grid_rowconfigure(2, weight=1)
-
-        head=ctk.CTkFrame(left, fg_color="transparent"); head.grid(row=0, column=0, sticky="ew", padx=12, pady=(10,4))
-        ctk.CTkLabel(head, text="Salidas de esta orden", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(side="left")
-        ctk.CTkOptionMenu(head, variable=self._ship_filter_status, values=["Todas","Aprobadas","Pendientes"],
-                          command=lambda _v: self._reload_order_shipments()).pack(side="right")
-
-        ctk.CTkFrame(left, height=1, fg_color=("#E5E7EB","#2B2B2B")).grid(row=1, column=0, sticky="ew", padx=12, pady=(0,6))
-        cols=("status","fecha","qty","destino","nota")
-        self._tree_ord = ttk.Treeview(left, columns=cols, show="headings", height=12)
-        for k,t,w in [("status","Estado",90),("fecha","Fecha",110),("qty","Qty",80),("destino","Destino",180),("nota","Nota",260)]:
-            self._tree_ord.heading(k, text=t); self._tree_ord.column(k, width=w, anchor="center" if k not in ("destino","nota") else "w")
-        self._tree_ord.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0,6))
-
-        act=ctk.CTkFrame(left, fg_color="transparent"); act.grid(row=3, column=0, sticky="ew", padx=12, pady=(0,10))
-        ctk.CTkButton(act, text="Aprobar selección", command=self._approve_selected_in_order).pack(side="left")
-        ctk.CTkButton(act, text="Editar...", command=self._edit_selected_in_order).pack(side="left", padx=6)
-        ctk.CTkButton(act, text="Duplicar", command=self._clone_selected_in_order).pack(side="left", padx=6)
-        ctk.CTkButton(act, text="Eliminar", fg_color="#ef4444", hover_color="#dc2626", command=self._delete_selected_in_order).pack(side="left", padx=6)
-        ctk.CTkButton(act, text="Exportar CSV (orden)", command=self._export_order_csv).pack(side="right")
-
-        # Panel derecho: progreso y barras
-        right=ctk.CTkFrame(tab_order, corner_radius=18); right.grid(row=2, column=1, sticky="nsew", padx=(8,0))
-        ctk.CTkLabel(right, text="Progreso de la Orden", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=12, pady=(10,6))
-        ctk.CTkFrame(right, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
-        self._bar_prog = ctk.CTkProgressBar(right); self._bar_prog.set(0.0); self._bar_prog.pack(fill="x", padx=12)
-        self._lbl_prog  = ctk.CTkLabel(right, text="—", text_color=("#6b7280","#9CA3AF")); self._lbl_prog.pack(anchor="w", padx=12, pady=(2,6))
-        self._lbl_kpis  = ctk.CTkLabel(right, text="—", text_color=("#6b7280","#9CA3AF")); self._lbl_kpis.pack(anchor="w", padx=12, pady=(4,10))
-
-        # ===== Tab: Global =====
-        tab_global.grid_rowconfigure(2, weight=1)
-
-        flt=ctk.CTkFrame(tab_global, corner_radius=18); flt.grid(row=0, column=0, sticky="ew", pady=(0,8))
-        ctk.CTkLabel(flt, text="Filtros", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=12, pady=(10,6))
-        ctk.CTkFrame(flt, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
-
-        frf=ctk.CTkFrame(flt, fg_color="transparent"); frf.pack(fill="x", padx=12, pady=6)
-        ctk.CTkLabel(frf, text="Desde").pack(side="left")
-        e_from=ctk.CTkEntry(frf, textvariable=self._log_dt_from, placeholder_text="YYYY-MM-DD", width=140); e_from.pack(side="left", padx=6)
-        ctk.CTkButton(frf, text="📅", width=36, command=lambda: self._calendar_pick(e_from)).pack(side="left", padx=(0,10))
-        ctk.CTkLabel(frf, text="Hasta").pack(side="left")
-        e_to=ctk.CTkEntry(frf, textvariable=self._log_dt_to, placeholder_text="YYYY-MM-DD", width=140); e_to.pack(side="left", padx=6)
-        ctk.CTkButton(frf, text="📅", width=36, command=lambda: self._calendar_pick(e_to)).pack(side="left", padx=(0,10))
-
-        ordenes_plus = ["(todas)"] + ordenes
-        self._om_log_order = ctk.CTkOptionMenu(frf, values=ordenes_plus, width=150)
-        self._om_log_order.pack(side="left", padx=(10,6))
-        ctk.CTkOptionMenu(frf, variable=self._log_filter_status, values=["Todas","Aprobadas","Pendientes"]).pack(side="left", padx=6)
-        ctk.CTkEntry(frf, textvariable=self._log_filter_text, placeholder_text="Buscar orden / destino / nota...", width=280).pack(side="left", padx=8)
-        ctk.CTkButton(frf, text="Filtrar", command=self._reload_log).pack(side="left", padx=6)
-        ctk.CTkButton(frf, text="Limpiar", command=self._clear_log_filters).pack(side="left", padx=6)
-
-        cols3=("orden","molde","status","fecha","qty","destino","nota")
-        self._tree_log=ttk.Treeview(tab_global, columns=cols3, show="headings", height=12)
-        for k,t,w in [("orden","Orden",90),("molde","Molde",80),("status","Estado",90),("fecha","Fecha",110),
-                      ("qty","Qty",80),("destino","Destino",220),("nota","Nota",320)]:
-            self._tree_log.heading(k, text=t); self._tree_log.column(k, width=w, anchor="center" if k in ("orden","molde","status","fecha","qty") else "w")
-        self._tree_log.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0,6))
-
-        actg=ctk.CTkFrame(tab_global, fg_color="transparent"); actg.grid(row=3, column=0, sticky="ew", padx=6, pady=(0,12))
-        ctk.CTkButton(actg, text="Aprobar selección", command=self._approve_selected_in_log).pack(side="left")
-        ctk.CTkButton(actg, text="Eliminar selección", fg_color="#ef4444", hover_color="#dc2626", command=self._delete_selected_in_log).pack(side="left", padx=6)
-        ctk.CTkButton(actg, text="Exportar CSV (vista)", command=self._export_log_csv).pack(side="right")
-
-        self._lbl_totals_log = ctk.CTkLabel(tab_global, text="—", text_color=("#6b7280","#9CA3AF"))
-        self._lbl_totals_log.grid(row=4, column=0, sticky="w", padx=6, pady=(0,6))
-
-        # ===== Tab: Analytics =====
-        tab_analytics.grid_columnconfigure(0, weight=1)
-        tab_analytics.grid_columnconfigure(1, weight=1)
-
-        # por orden
-        cardA=ctk.CTkFrame(tab_analytics, corner_radius=18); cardA.grid(row=0, column=0, sticky="nsew", padx=(0,8))
-        ctk.CTkLabel(cardA, text="Resumen por Orden (aprobadas)", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=12, pady=(10,6))
-        ctk.CTkFrame(cardA, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
-        colsA=("orden","parte","molde","objetivo","enviado","avance","pendiente")
-        self._tree_agg_ord = ttk.Treeview(cardA, columns=colsA, show="headings", height=12)
-        for k,t,w in [("orden","Orden",90),("parte","Parte",160),("molde","Molde",80),("objetivo","Obj.",90),
-                      ("enviado","Enviado✔",110),("avance","Avance %",90),("pendiente","Pend.",90)]:
-            self._tree_agg_ord.heading(k, text=t); self._tree_agg_ord.column(k, width=w, anchor="center" if k!="parte" else "w")
-        self._tree_agg_ord.pack(fill="both", expand=True, padx=12, pady=(0,10))
-
-        # por molde
-        cardB=ctk.CTkFrame(tab_analytics, corner_radius=18); cardB.grid(row=0, column=1, sticky="nsew", padx=(8,0))
-        ctk.CTkLabel(cardB, text="Resumen por Molde", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=12, pady=(10,6))
-        ctk.CTkFrame(cardB, height=1, fg_color=("#E5E7EB","#2B2B2B")).pack(fill="x", padx=12, pady=(0,10))
-        colsB=("molde","bruto","enviado","neto","sobrante")
-        self._tree_agg_mold = ttk.Treeview(cardB, columns=colsB, show="headings", height=12)
-        for k,t,w in [("molde","Molde",90),("bruto","Bruto",100),("enviado","Enviado✔",110),("neto","Neto",100),("sobrante","Sobrante",110)]:
-            self._tree_agg_mold.heading(k, text=t); self._tree_agg_mold.column(k, width=w, anchor="center")
-        self._tree_agg_mold.pack(fill="both", expand=True, padx=12, pady=(0,10))
-
-        # init
-        self._e_date.insert(0, date.today().isoformat())
-        if ordenes and ordenes[0]:
-            self._om_order.set(ordenes[0])
-            self._selected_order = ordenes[0]
+        self._build_sidebar_form(main_container)
+        
+        content_scroll = ctk.CTkScrollableFrame(main_container, fg_color="transparent")
+        content_scroll.grid(row=0, column=1, sticky="nsew", padx=(24, 0))
+        
+        self._build_order_dashboard(content_scroll)
+        
         self._reload_all()
 
-    # ========== Data reloads ==========
+    def _build_sidebar_form(self, parent):
+        sidebar = ctk.CTkFrame(parent, width=380, corner_radius=16, fg_color=("#FFFFFF", "#1E293B"),
+                               border_width=1, border_color=("#E2E8F0", "#334155"))
+        sidebar.grid(row=0, column=0, sticky="nswe")
+        sidebar.pack_propagate(False)
+        
+        scroll_area = ctk.CTkScrollableFrame(sidebar, fg_color="transparent")
+        scroll_area.pack(fill="both", expand=True, pady=(0, 10))
+
+        ctk.CTkLabel(scroll_area, text="➕ Registrar Nueva Salida", font=ctk.CTkFont("Helvetica", 18, "bold"),
+                     text_color=("#3B82F6", "#93C5FD")).pack(anchor="w", padx=20, pady=(20, 10))
+        
+        ordenes = [r.get("orden", "") for r in leer_csv_dict(config.PLANNING_CSV)] or ["(Sin órdenes)"]
+        self._om_order = ctk.CTkOptionMenu(scroll_area, values=ordenes, height=36,
+                                           command=lambda v: self.set_order(v))
+        self._om_order.pack(fill="x", padx=20, pady=5)
+        
+        self._e_date = ctk.CTkEntry(scroll_area, placeholder_text="Fecha (YYYY-MM-DD)", height=36)
+        self._e_date.pack(fill="x", padx=20, pady=5)
+        self._e_qty = ctk.CTkEntry(scroll_area, placeholder_text="Cantidad a enviar", height=36)
+        self._e_qty.pack(fill="x", padx=20, pady=5)
+
+        ctk.CTkLabel(scroll_area, text="Destino (Cliente):", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
+        self._om_dest = ctk.CTkOptionMenu(scroll_area, height=36, values=["(Sin clientes)"])
+        self._om_dest.pack(fill="x", padx=20, pady=5)
+
+        ctk.CTkLabel(scroll_area, text="Quién Entrega:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
+        self._om_entrega = ctk.CTkOptionMenu(scroll_area, height=36, values=["(Sin personal)"])
+        self._om_entrega.pack(fill="x", padx=20, pady=5)
+
+        ctk.CTkLabel(scroll_area, text="Quién Autoriza:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
+        self._om_autoriza = ctk.CTkOptionMenu(scroll_area, height=36, values=["(Sin personal)"])
+        self._om_autoriza.pack(fill="x", padx=20, pady=5)
+
+        self._e_note = ctk.CTkTextbox(scroll_area, height=80, border_width=1, border_color=("#D1D5DB", "#4B5563"))
+        self._e_note.pack(fill="both", expand=True, padx=20, pady=5)
+        self._note_focus_out()
+        self._e_note.bind("<FocusIn>", self._note_focus_in)
+        self._e_note.bind("<FocusOut>", self._note_focus_out)
+        
+        ctk.CTkCheckBox(scroll_area, text="Aprobar al guardar", variable=self._approve_on_save).pack(anchor="w", padx=20, pady=10)
+        
+        ctk.CTkButton(scroll_area, text="Guardar Salida", height=40, command=self._save_shipment,
+                      font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=20, pady=10)
+
+        admin_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        admin_frame.pack(fill="x", padx=20, pady=(0, 20))
+        admin_frame.grid_columnconfigure((0, 1), weight=1)
+
+        ctk.CTkButton(admin_frame, text="Personal", height=32,
+                      fg_color="#6B7280", hover_color="#4B5563",
+                      command=self._open_personnel_manager).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        
+        ctk.CTkButton(admin_frame, text="Clientes", height=32,
+                      fg_color="#6B7280", hover_color="#4B5563",
+                      command=self._open_client_manager).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        
+        self._e_date.insert(0, date.today().isoformat())
+        if ordenes and ordenes[0] != "(Sin órdenes)":
+            self._om_order.set(ordenes[0])
+            self._selected_order = ordenes[0]
+            
+    def _build_order_dashboard(self, parent):
+        self.order_dashboard = ctk.CTkFrame(parent, fg_color="transparent")
+        self.order_dashboard.pack(fill="x")
+        
+        self.lbl_order_header = ctk.CTkLabel(self.order_dashboard, text="Seleccione una Orden",
+                                             font=ctk.CTkFont("Helvetica", 20, "bold"))
+        self.lbl_order_header.pack(anchor="w", pady=(0, 10))
+
+        kpi_grid = ctk.CTkFrame(self.order_dashboard, fg_color="transparent")
+        kpi_grid.pack(fill="x", pady=(0, 20))
+        kpi_grid.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self.kpi_prog = self._create_kpi_card(kpi_grid, 0, "PROGRESO TOTAL", ("#3B82F6", "#93C5FD"))
+        self.kpi_pend = self._create_kpi_card(kpi_grid, 1, "PENDIENTE POR SURTIR", ("#EF4444", "#F87171"))
+        self.kpi_neto = self._create_kpi_card(kpi_grid, 2, "INVENTARIO NETO (MOLDE)", ("#10B981", "#6EE7B7"))
+        
+        table_frame = ctk.CTkFrame(self.order_dashboard, corner_radius=12, fg_color=("#FFFFFF", "#1E293B"),
+                                   border_width=1, border_color=("#E2E8F0", "#334155"))
+        table_frame.pack(fill="both", expand=True)
+        
+        controls_frame = ctk.CTkFrame(table_frame, fg_color="transparent")
+        controls_frame.pack(fill="x", padx=12, pady=12)
+        ctk.CTkLabel(controls_frame, text="Salidas de esta orden:", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        ctk.CTkOptionMenu(controls_frame, variable=self._ship_filter_status, values=["Todas","Aprobadas","Pendientes"],
+                          command=lambda v: self._reload_order_detail()).pack(side="left", padx=8)
+        ctk.CTkButton(controls_frame, text="Aprobar Selección", command=self._approve_selected_in_order, height=32).pack(side="right", padx=4)
+        ctk.CTkButton(controls_frame, text="Eliminar", command=self._delete_selected_in_order, height=32,
+                      fg_color="#EF4444", hover_color="#DC2626").pack(side="right")
+
+        cols=("status","fecha","qty","destino","entrega","autoriza","nota")
+        self._tree_ord = ttk.Treeview(table_frame, columns=cols, show="headings", height=15)
+        for k,t,w in [("status","Estado",100),("fecha","Fecha",100),("qty","Cantidad",80),
+                      ("destino","Destino",150), ("entrega", "Entrega", 120), ("autoriza", "Autoriza", 120),
+                      ("nota","Nota",200)]:
+            self._tree_ord.heading(k, text=t); self._tree_ord.column(k, width=w, anchor="w")
+        self._tree_ord.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+    def _create_kpi_card(self, parent, col, title, colors):
+        card = ctk.CTkFrame(parent, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12,
+                           border_width=1, border_color=("#E2E8F0", "#334155"))
+        card.grid(row=0, column=col, sticky="nsew", padx=4)
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=11, weight="bold"), text_color=colors).pack(pady=(12, 4))
+        value_label = ctk.CTkLabel(card, text="—", font=ctk.CTkFont(size=24, weight="bold"))
+        value_label.pack(pady=(0, 12))
+        return value_label
+        
+    def _open_personnel_manager(self):
+        top = ctk.CTkToplevel(self)
+        top.title("Administrar Personal")
+        top.geometry("400x350")
+        top.transient(self); top.grab_set()
+
+        ctk.CTkLabel(top, text="Agregar Nuevo Personal", font=ctk.CTkFont(weight="bold")).pack(pady=(10,5))
+        
+        entry_name = ctk.CTkEntry(top, placeholder_text="Nombre completo")
+        entry_name.pack(fill="x", padx=20, pady=5)
+        
+        role_var = tk.StringVar(value="Entrega")
+        ctk.CTkSegmentedButton(top, values=["Entrega", "Autoriza"], variable=role_var).pack(pady=5)
+        
+        def add_person():
+            name = entry_name.get().strip()
+            role = role_var.get()
+            if not name:
+                messagebox.showwarning("Dato requerido", "El nombre no puede estar vacío.", parent=top)
+                return
+            
+            rows = leer_csv_dict(config.PERSONNEL_CSV)
+            if any(r["nombre"].lower() == name.lower() for r in rows):
+                messagebox.showwarning("Duplicado", f"El nombre '{name}' ya existe.", parent=top)
+                return
+
+            with open(config.PERSONNEL_CSV, "a", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow([name, role])
+            
+            entry_name.delete(0, "end")
+            self._populate_personnel_dropdowns()
+            messagebox.showinfo("Éxito", f"'{name}' agregado al rol de '{role}'.", parent=top)
+
+        ctk.CTkButton(top, text="Agregar Persona", command=add_person).pack(pady=10)
+
+        ctk.CTkFrame(top, height=1, fg_color="gray50").pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(top, text="El personal agregado aparecerá en los menús desplegables.",
+                     wraplength=360, font=ctk.CTkFont(size=11)).pack(pady=5)
+        ctk.CTkButton(top, text="Cerrar", command=top.destroy).pack(pady=10)
+
+    def _open_client_manager(self):
+        top = ctk.CTkToplevel(self)
+        top.title("Administrar Clientes/Destinos")
+        top.geometry("450x400")
+        top.transient(self); top.grab_set()
+
+        ctk.CTkLabel(top, text="Agregar Nuevo Cliente", font=ctk.CTkFont(weight="bold")).pack(pady=(10,5))
+        
+        entry_name = ctk.CTkEntry(top, placeholder_text="Nombre del Cliente/Empresa")
+        entry_name.pack(fill="x", padx=20, pady=5)
+        entry_addr = ctk.CTkEntry(top, placeholder_text="Dirección (opcional)")
+        entry_addr.pack(fill="x", padx=20, pady=5)
+        entry_contact = ctk.CTkEntry(top, placeholder_text="Contacto (opcional)")
+        entry_contact.pack(fill="x", padx=20, pady=5)
+
+        def add_client():
+            name = entry_name.get().strip()
+            addr = entry_addr.get().strip()
+            contact = entry_contact.get().strip()
+            if not name:
+                messagebox.showwarning("Dato requerido", "El nombre del cliente no puede estar vacío.", parent=top)
+                return
+            
+            rows = leer_csv_dict(config.CLIENTS_CSV)
+            if any(r["nombre"].lower() == name.lower() for r in rows):
+                messagebox.showwarning("Duplicado", f"El cliente '{name}' ya existe.", parent=top)
+                return
+
+            with open(config.CLIENTS_CSV, "a", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow([name, addr, contact])
+            
+            entry_name.delete(0, "end"); entry_addr.delete(0, "end"); entry_contact.delete(0, "end")
+            self._populate_clients_dropdown()
+            messagebox.showinfo("Éxito", f"Cliente '{name}' agregado.", parent=top)
+
+        ctk.CTkButton(top, text="Agregar Cliente", command=add_client).pack(pady=10)
+        ctk.CTkButton(top, text="Cerrar", command=top.destroy).pack(pady=10)
+
+    def _note_focus_in(self, event=None):
+        if self._note_has_placeholder:
+            self._e_note.delete("1.0", "end")
+            text_color = ctk.ThemeManager.theme["CTkTextbox"]["text_color"]
+            self._e_note.configure(text_color=text_color)
+            self._note_has_placeholder = False
+
+    def _note_focus_out(self, event=None):
+        if not self._e_note.get("1.0", "end-1c").strip():
+            placeholder_color = ("gray50", "gray50")
+            self._e_note.configure(text_color=placeholder_color)
+            self._e_note.insert("1.0", "Notas adicionales...")
+            self._note_has_placeholder = True
+
     def _reload_all(self):
-        # Por Orden
-        self._refresh_order_header()
-        self._reload_order_shipments()
-        # Global
-        self._reload_log()
-        # Analytics
-        self._reload_analytics()
+        self._populate_personnel_dropdowns()
+        self._populate_clients_dropdown()
+        self._reload_orders_list()
+        self._reload_order_detail()
+
+    def _populate_personnel_dropdowns(self):
+        personnel = leer_csv_dict(config.PERSONNEL_CSV)
+        entrega_list = [""] + sorted([p["nombre"] for p in personnel if p.get("rol") == "Entrega"])
+        autoriza_list = [""] + sorted([p["nombre"] for p in personnel if p.get("rol") == "Autoriza"])
+        
+        self._om_entrega.configure(values=entrega_list if len(entrega_list) > 1 else ["(Sin personal)"])
+        self._om_autoriza.configure(values=autoriza_list if len(autoriza_list) > 1 else ["(Sin personal)"])
+        self._om_entrega.set(entrega_list[0])
+        self._om_autoriza.set(autoriza_list[0])
+
+    def _populate_clients_dropdown(self):
+        clients = leer_csv_dict(config.CLIENTS_CSV)
+        client_names = [""] + sorted([c["nombre"] for c in clients])
+        self._om_dest.configure(values=client_names if len(client_names) > 1 else ["(Sin clientes)"])
+        self._om_dest.set(client_names[0])
 
     def _reload_orders_list(self):
-        ordenes=[r.get("orden","") for r in leer_csv_dict(PLANNING_CSV)] or ["(elige orden)"]
+        ordenes = [r.get("orden","") for r in leer_csv_dict(config.PLANNING_CSV)] or ["(Sin órdenes)"]
         self._om_order.configure(values=ordenes)
+        if self._selected_order not in ordenes and ordenes[0] != "(Sin órdenes)":
+            self._selected_order = ordenes[0]
+        self._om_order.set(self._selected_order or ordenes[0])
 
-    def _on_order_change(self):
-        self._selected_order = self._om_order.get().strip()
-        self._refresh_order_header()
-        self._reload_order_shipments()
-
-    # --- Encabezados y barras (Por Orden)
-    def _refresh_order_header(self):
-        if not self._selected_order:
-            self._lbl_order.configure(text="—"); self._lbl_mold.configure(text="—")
-            self._bar_prog.set(0.0); self._lbl_prog.configure(text="—"); self._lbl_kpis.configure(text="—")
-            return
-        plan = leer_csv_dict(PLANNING_CSV)
-        row = next((r for r in plan if (r.get("orden","") or "").strip()==self._selected_order), None)
-        if not row:
-            self._lbl_order.configure(text="—"); self._lbl_mold.configure(text="—")
-            self._bar_prog.set(0.0); self._lbl_prog.configure(text="—"); self._lbl_kpis.configure(text="—")
+    def _reload_order_detail(self):
+        if not self._selected_order or self._selected_order == "(Sin órdenes)":
+            self.lbl_order_header.configure(text="Seleccione una Orden para ver sus detalles")
+            self.kpi_prog.configure(text="—")
+            self.kpi_pend.configure(text="—")
+            self.kpi_neto.configure(text="—")
+            for i in self._tree_ord.get_children(): self._tree_ord.delete(i)
             return
 
-        molde=(row.get("molde_id","") or "").strip()
-        parte=(row.get("parte","") or "").strip()
-        fifo = compute_fifo_assignments(plan)
-        m = order_metrics(row, fifo)
-        mm= mold_metrics(molde, fifo)
+        plan = leer_csv_dict(config.PLANNING_CSV)
+        row = next((r for r in plan if (r.get("orden","") or "").strip() == self._selected_order), None)
+        if not row: return
 
-        objetivo=m["objetivo"]; enviado=m["enviado"]; asignado=m["asignado"]; progreso=m["progreso"]; pendiente=m["pendiente"]
-        frac = (progreso/objetivo) if objetivo>0 else 0.0
+        molde = (row.get("molde_id","") or "").strip(); parte = (row.get("parte","") or "").strip()
+        fifo = compute_fifo_assignments(plan); m = order_metrics(row, fifo); mm = mold_metrics(molde, fifo)
+        
+        self.lbl_order_header.configure(text=f"Orden {self._selected_order} — {parte}")
+        self.kpi_prog.configure(text=f"{m['progreso']:,} / {m['objetivo']:,}")
+        self.kpi_pend.configure(text=f"{m['pendiente']:,}")
+        self.kpi_neto.configure(text=f"{mm['neto']:,}")
 
-        self._lbl_order.configure(text=f"Orden {self._selected_order} — {parte}  •  Obj {objetivo:,}")
-        self._bar_prog.set(frac)
-        self._lbl_prog.configure(text=f"Progreso: {progreso:,}  (= Enviado {enviado:,} + Asignado {asignado:,})  •  Pendiente: {pendiente:,}")
-        self._lbl_mold.configure(text=f"Molde {molde}  •  Neto molde: {mm['neto']:,}  •  Sobrante sin asignar: {mm['sobrante']:,}")
-        self._lbl_kpis.configure(text=f"Envíos aprobados (orden): {enviado:,} pzs")
-
-    # --- Tabla envíos de la orden
-    def _get_order_shipments_filtered(self, orden):
-        rows = [r for r in self._shipments_all() if (r.get("orden","") or "").strip()==(orden or "")]
-        st = self._ship_filter_status.get()
-        if st=="Aprobadas":
-            rows = [r for r in rows if str(r.get("approved","0")).strip()=="1"]
-        elif st=="Pendientes":
-            rows = [r for r in rows if str(r.get("approved","0")).strip()!="1"]
-        try: rows.sort(key=lambda r: r.get("ship_date",""))
-        except: pass
-        return rows
-
-    def _reload_order_shipments(self):
         for i in self._tree_ord.get_children(): self._tree_ord.delete(i)
-        if not self._selected_order: return
-        rows = self._get_order_shipments_filtered(self._selected_order)
-        for r in rows:
-            self._tree_ord.insert("", "end", values=(self._status_label(r), r.get("ship_date",""), r.get("qty",""),
-                                                     r.get("destino",""), r.get("nota","")))
+        
+        status_filter = self._ship_filter_status.get()
+        order_shipments = [r for r in self._shipments_all() if r.get("orden") == self._selected_order]
 
-    # --- Guardar (alta) con validación FIFO y “aprobar al guardar”
+        if status_filter == "Aprobadas":
+            order_shipments = [r for r in order_shipments if str(r.get("approved","0")).strip()=="1"]
+        elif status_filter == "Pendientes":
+            order_shipments = [r for r in order_shipments if str(r.get("approved","0")).strip()!="1"]
+        
+        order_shipments.sort(key=lambda r: r.get("ship_date",""), reverse=True)
+        
+        for r in order_shipments:
+            self._tree_ord.insert("", "end", values=(
+                self._status_label(r), r.get("ship_date",""), r.get("qty",""),
+                r.get("destino",""), r.get("entrega", ""), r.get("autoriza", ""), r.get("nota","")
+            ))
+                                                     
     def _save_shipment(self):
         o=self._om_order.get().strip()
-        if not o or o=="(elige orden)":
-            messagebox.showwarning("Orden","Elige una orden."); return
+        if not o or o=="(Sin órdenes)":
+            messagebox.showwarning("Orden", "Debe seleccionar una orden válida."); return
         d=self._e_date.get().strip()
-        q=parse_int_str(self._e_qty.get().strip(),0)
-        if not (d and q>0):
-            messagebox.showwarning("Salida","Fecha y cantidad (>0) obligatorias."); return
-        dest=self._e_dest.get().strip(); nota=self._e_note.get().strip()
+        try:
+            qty_val = int(self._e_qty.get().strip())
+            if qty_val <= 0: raise ValueError()
+        except (ValueError, TypeError):
+            messagebox.showwarning("Datos Inválidos", "La cantidad debe ser un número entero positivo."); return
+        
+        dest = self._om_dest.get()
+        if dest == "(Sin clientes)": dest = ""
+        nota = "" if self._note_has_placeholder else self._e_note.get("1.0", "end-1c").strip()
+        entrega = self._om_entrega.get()
+        if entrega == "(Sin personal)": entrega = ""
+        autoriza = self._om_autoriza.get()
+        if autoriza == "(Sin personal)": autoriza = ""
 
-        plan=leer_csv_dict(PLANNING_CSV)
-        orow=next((r for r in plan if (r.get("orden","") or "")==o), None)
+        plan=leer_csv_dict(config.PLANNING_CSV)
+        orow=next((r for r in plan if r.get("orden") == o), None)
         if not orow:
-            messagebox.showwarning("Orden","La orden no existe."); return
+            messagebox.showerror("Error", "La orden seleccionada ya no existe en la planificación."); return
 
-        # Si se va a aprobar en el guardado: validar contra asignado FIFO
         if self._approve_on_save.get():
             fifo = compute_fifo_assignments(plan)
-            asignado = order_metrics(orow, fifo)["asignado"]
-            if q > asignado:
-                messagebox.showwarning("Límite", f"No puedes aprobar {q} pzs: asignado FIFO a la orden = {asignado} pzs.")
+            m = order_metrics(orow, fifo)
+            disponible_para_enviar = m['progreso'] - m['enviado']
+            if qty_val > disponible_para_enviar:
+                messagebox.showwarning("Límite Excedido", f"No se puede aprobar esta cantidad.\n\nInventario disponible para esta orden: {disponible_para_enviar:,} pzs.\nCantidad solicitada: {qty_val:,} pzs.")
                 return
 
         approved_flag = "1" if self._approve_on_save.get() else "0"
-        with open(SHIPMENTS_CSV, "a", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow([o, d, str(q), dest, nota, approved_flag])
+        with open(config.SHIPMENTS_CSV, "a", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow([o, d, str(qty_val), dest, nota, approved_flag, entrega, autoriza])
+        
+        self._e_qty.delete(0,"end"); self._e_note.delete("1.0", "end")
+        self._note_focus_out()
+        self._reload_all()
+        messagebox.showinfo("Éxito", "Salida registrada correctamente.")
 
-        self._e_qty.delete(0,"end"); self._e_dest.delete(0,"end"); self._e_note.delete(0,"end")
-        self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-        messagebox.showinfo("Salida", "Salida registrada " + ("(aprobada)" if approved_flag=="1" else "y pendiente de aprobación."))
-
-    # --- Aprobar / Editar / Duplicar / Eliminar en "Por Orden"
     def _approve_selected_in_order(self):
         sel=self._tree_ord.selection()
         if not sel: return
-        # calcular total a aprobar (solo pendientes)
-        approve_list=[]
-        tot_to_approve=0
-        for iid in sel:
-            status, fecha, qty, dest, nota = self._tree_ord.item(iid,"values")
-            if status=="Aprobada": continue
-            approve_list.append((fecha, str(qty), dest, nota))
-            try: tot_to_approve += int(float(qty))
-            except: pass
-
-        if not approve_list: return
-
-        plan=leer_csv_dict(PLANNING_CSV)
-        orow=next((r for r in plan if (r.get("orden","") or "")==self._selected_order), None)
+        
+        plan=leer_csv_dict(config.PLANNING_CSV)
         fifo=compute_fifo_assignments(plan)
-        asignado = order_metrics(orow, fifo)["asignado"]
+        orow=next((r for r in plan if r.get("orden") == self._selected_order), None)
+        m = order_metrics(orow, fifo)
+        disponible = m['progreso'] - m['enviado']
 
-        if tot_to_approve > asignado:
-            messagebox.showwarning("Límite", f"No puedes aprobar {tot_to_approve} pzs: asignado FIFO a la orden = {asignado} pzs.")
+        qty_a_aprobar = 0; items_a_aprobar = []
+        for iid in sel:
+            status, fecha, qty_str, dest, entrega, autoriza, nota = self._tree_ord.item(iid, "values")
+            if status == "Pendiente":
+                qty_a_aprobar += parse_int_str(qty_str)
+                items_a_aprobar.append((fecha, qty_str, dest, nota, entrega, autoriza))
+
+        if qty_a_aprobar == 0: return
+
+        if qty_a_aprobar > disponible:
+            messagebox.showwarning("Límite Excedido", f"No se pueden aprobar las salidas seleccionadas.\n\nInventario disponible: {disponible:,} pzs.\nCantidad a aprobar: {qty_a_aprobar:,} pzs.")
             return
 
-        rows=leer_shipments(); changed=False
+        rows=self._shipments_all(); changed=False
         for r in rows:
-            if (r.get("orden","") or "")==self._selected_order and r.get("approved","0")!="1":
-                key=(r.get("ship_date",""), str(r.get("qty","")), r.get("destino",""), r.get("nota",""))
-                if key in approve_list:
+            if r.get("orden") == self._selected_order and r.get("approved","0") != "1":
+                key = (r.get("ship_date",""), r.get("qty",""), r.get("destino",""), r.get("nota",""), r.get("entrega",""), r.get("autoriza",""))
+                if key in items_a_aprobar:
                     r["approved"]="1"; changed=True
 
         if changed:
-            with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-                w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
+            with open(config.SHIPMENTS_CSV, "w", newline="", encoding="utf-8") as f:
+                w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved", "entrega", "autoriza"])
                 w.writeheader(); w.writerows(rows)
-            self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-
-    def _edit_selected_in_order(self):
-        sel=self._tree_ord.selection()
-        if not sel: return
-        status, fecha, qty, dest, nota = self._tree_ord.item(sel[0], "values")
-        self._open_edit_dialog(self._selected_order, fecha, qty, dest, nota, status=="Aprobada")
-
-    def _clone_selected_in_order(self):
-        sel=self._tree_ord.selection()
-        if not sel: return
-        status, fecha, qty, dest, nota = self._tree_ord.item(sel[0], "values")
-        # prellenar el form con los datos (como duplicado, queda pendiente por default)
-        self._e_date.delete(0,"end"); self._e_date.insert(0, fecha)
-        self._e_qty.delete(0,"end"); self._e_qty.insert(0, qty)
-        self._e_dest.delete(0,"end"); self._e_dest.insert(0, dest)
-        self._e_note.delete(0,"end"); self._e_note.insert(0, nota)
-        self._approve_on_save.set(False)
+            self._reload_all()
 
     def _delete_selected_in_order(self):
         sel=self._tree_ord.selection()
         if not sel: return
-        if not messagebox.askyesno("Eliminar", "¿Eliminar registros seleccionados?"): return
-        rows=leer_shipments(); new=[]
-        keys=set()
+        if not messagebox.askyesno("Confirmar", f"¿Eliminar {len(sel)} registro(s) de salida?"): return
+        
+        rows=self._shipments_all(); new_rows=[]
+        keys_to_delete = set()
         for iid in sel:
-            status, fecha, qty, dest, nota = self._tree_ord.item(iid,"values")
-            keys.add((self._selected_order, fecha, str(qty), dest, nota, "1" if status=="Aprobada" else "0"))
+            status, fecha, qty, dest, entrega, autoriza, nota = self._tree_ord.item(iid, "values")
+            approved = "1" if status == "Aprobada" else "0"
+            keys_to_delete.add((self._selected_order, fecha, str(qty), dest, nota, approved, entrega, autoriza))
+        
         for r in rows:
-            k=(r.get("orden",""), r.get("ship_date",""), str(r.get("qty","")), r.get("destino",""), r.get("nota",""), r.get("approved","0"))
-            if k in keys: continue
-            new.append(r)
-        with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-            w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
-            w.writeheader(); w.writerows(new)
-        self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-
-    def _export_order_csv(self):
-        if not self._selected_order: return
-        try:
-            path=filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV","*.csv")],
-                                              initialfile=f"salidas_{self._selected_order}.csv")
-        except: path=None
-        if not path: return
-        with open(path,"w",newline="",encoding="utf-8") as f:
-            w=csv.writer(f); w.writerow(["estado","fecha","qty","destino","nota"])
-            for iid in self._tree_ord.get_children():
-                w.writerow(self._tree_ord.item(iid,"values"))
-        messagebox.showinfo("Exportar", f"Archivo guardado:\n{path}")
-
-    # --- Edit dialog
-    def _open_edit_dialog(self, orden, fecha, qty, dest, nota, is_approved):
-        top=ctk.CTkToplevel(self); top.title(f"Editar salida — Orden {orden}")
-        top.geometry("+{}+{}".format(self.winfo_rootx()+120, self.winfo_rooty()+120))
-        top.grab_set()
-
-        ctk.CTkLabel(top, text=f"Orden {orden}", font=ctk.CTkFont("Helvetica", 14, "bold")).pack(anchor="w", padx=14, pady=(12,6))
-        frm=ctk.CTkFrame(top); frm.pack(fill="x", padx=14, pady=(0,10))
-        e_date=ctk.CTkEntry(frm, width=170); e_date.insert(0, fecha); e_date.pack(side="left", padx=(0,6))
-        ctk.CTkButton(frm, text="📅", width=36, command=lambda: self._calendar_pick(e_date)).pack(side="left", padx=(0,8))
-        e_qty=ctk.CTkEntry(frm, width=120); e_qty.insert(0, str(qty)); e_qty.pack(side="left", padx=6)
-        e_dest=ctk.CTkEntry(frm, width=220); e_dest.insert(0, dest); e_dest.pack(side="left", padx=6)
-        e_note=ctk.CTkEntry(frm, width=260); e_note.insert(0, nota); e_note.pack(side="left", padx=6)
-        var_approved = tk.BooleanVar(value=is_approved)
-        ctk.CTkCheckBox(top, text="Aprobada", variable=var_approved).pack(anchor="w", padx=14, pady=(0,8))
-
-        def save_edit():
-            new_d = e_date.get().strip()
-            new_q = parse_int_str(e_qty.get().strip(),0)
-            new_dest = e_dest.get().strip()
-            new_note = e_note.get().strip()
-            new_appr = "1" if var_approved.get() else "0"
-            if not (new_d and new_q>0):
-                messagebox.showwarning("Editar","Fecha y cantidad (>0) obligatorias."); return
-
-            # si se cambia a aprobada (o aumenta qty aprobada), validar asignado FIFO
-            if new_appr=="1":
-                plan=leer_csv_dict(PLANNING_CSV)
-                orow=next((r for r in plan if (r.get("orden","") or "")==orden), None)
-                fifo=compute_fifo_assignments(plan)
-                asignado = order_metrics(orow, fifo)["asignado"]
-                # considerar si antes ya estaba aprobada y la qty cambia
-                prev_q_approved = parse_int_str(qty,0) if is_approved else 0
-                delta = max(0, new_q - prev_q_approved)
-                if delta > asignado:
-                    messagebox.showwarning("Límite",
-                        f"No puedes aprobar +{delta} pzs: asignado FIFO disponible = {asignado} pzs.")
-                    return
-
-            # aplicar cambios
-            rows=leer_shipments(); done=False
-            for r in rows:
-                if (r.get("orden","")==orden and r.get("ship_date","")==fecha and str(r.get("qty",""))==str(qty)
-                    and r.get("destino","")==dest and r.get("nota","")==nota and r.get("approved","0")==("1" if is_approved else "0")
-                    and not done):
-                    r["ship_date"]=new_d; r["qty"]=str(new_q); r["destino"]=new_dest; r["nota"]=new_note; r["approved"]=new_appr
-                    done=True
-            with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-                w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
-                w.writeheader(); w.writerows(rows)
-            top.destroy()
-            self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-
-        btns=ctk.CTkFrame(top, fg_color="transparent"); btns.pack(fill="x", padx=14, pady=(0,12))
-        ctk.CTkButton(btns, text="Guardar", command=save_edit).pack(side="left")
-        ctk.CTkButton(btns, text="Cancelar", fg_color="#E5E7EB", text_color="#111", hover_color="#D1D5DB",
-                      command=top.destroy).pack(side="left", padx=8)
-
-    # ====== Global (log) ======
-    def _clear_log_filters(self):
-        self._log_filter_status.set("Todas")
-        self._log_filter_text.set("")
-        self._log_dt_from.set("")
-        self._log_dt_to.set("")
-        try: self._om_log_order.set("(todas)")
-        except: pass
-        self._reload_log()
-
-    def _reload_log(self):
-        for i in self._tree_log.get_children(): self._tree_log.delete(i)
-
-        plan = leer_csv_dict(PLANNING_CSV)
-        orden_a_molde = {(r.get("orden","") or "").strip(): (r.get("molde_id","") or "").strip() for r in plan}
-
-        rows = self._shipments_all()
-
-        # filtros de estado
-        st=self._log_filter_status.get()
-        if st=="Aprobadas":
-            rows=[r for r in rows if str(r.get("approved","0")).strip()=="1"]
-        elif st=="Pendientes":
-            rows=[r for r in rows if str(r.get("approved","0")).strip()!="1"]
-
-        # filtro orden
-        try:
-            ord_sel = self._om_log_order.get()
-            if ord_sel and ord_sel!="(todas)":
-                rows=[r for r in rows if (r.get("orden","") or "")==ord_sel]
-        except:
-            pass
-
-        # filtro fechas
-        dtf=(self._log_dt_from.get() or "").strip()
-        dtt=(self._log_dt_to.get() or "").strip()
-        def in_range(d):
-            if not d: return True
-            if dtf and d<dtf: return False
-            if dtt and d>dtt: return False
-            return True
-        rows=[r for r in rows if in_range((r.get("ship_date","") or ""))]
-
-        # filtro texto
-        txt=(self._log_filter_text.get() or "").lower().strip()
-        if txt:
-            r2=[]
-            for r in rows:
-                blob=" ".join([(r.get("orden","") or ""), (r.get("destino","") or ""), (r.get("nota","") or "")]).lower()
-                if txt in blob: r2.append(r)
-            rows=r2
-
-        try: rows.sort(key=lambda r: r.get("ship_date",""))
-        except: pass
-
-        total_qty=0
-        for r in rows:
-            try: total_qty += int(float(r.get("qty","0") or 0))
-            except: pass
-            orden=(r.get("orden","") or "").strip()
-            self._tree_log.insert("", "end", values=(
-                orden,
-                orden_a_molde.get(orden, ""),
-                self._status_label(r),
-                r.get("ship_date",""),
-                r.get("qty",""),
-                r.get("destino",""),
-                r.get("nota",""),
-            ))
-        self._lbl_totals_log.configure(text=f"Registros: {len(rows)}  •  Cantidad total: {total_qty:,} pzs")
-
-    def _approve_selected_in_log(self):
-        sel=self._tree_log.selection()
-        if not sel: return
-        # agrupar por orden para validar contra asignado FIFO
-        approve_map = {}
-        for iid in sel:
-            orden, molde, status, fecha, qty, dest, nota = self._tree_log.item(iid,"values")
-            if status=="Aprobada": continue
-            approve_map.setdefault(orden, 0)
-            try: approve_map[orden] += int(float(qty))
-            except: pass
-
-        if approve_map:
-            plan=leer_csv_dict(PLANNING_CSV); fifo=compute_fifo_assignments(plan)
-            for orden, qty_sum in approve_map.items():
-                orow = next((r for r in plan if (r.get("orden","") or "")==orden), None)
-                asignado = order_metrics(orow, fifo)["asignado"]
-                if qty_sum > asignado:
-                    messagebox.showwarning("Límite", f"Orden {orden}: no puedes aprobar {qty_sum} pzs; asignado FIFO = {asignado} pzs.")
-                    return
-
-        # aplicar aprobaciones
-        rows=leer_shipments(); changed=False
-        approve_keys=set()
-        for iid in sel:
-            orden, molde, status, fecha, qty, dest, nota = self._tree_log.item(iid,"values")
-            if status=="Aprobada": continue
-            approve_keys.add((orden, fecha, str(qty), dest, nota))
-        for r in rows:
-            k=((r.get("orden","") or ""), r.get("ship_date",""), str(r.get("qty","")), r.get("destino",""), r.get("nota",""))
-            if k in approve_keys and r.get("approved","0")!="1":
-                r["approved"]="1"; changed=True
-        if changed:
-            with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-                w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
-                w.writeheader(); w.writerows(rows)
-            self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-
-    def _delete_selected_in_log(self):
-        sel=self._tree_log.selection()
-        if not sel: return
-        if not messagebox.askyesno("Eliminar","¿Eliminar registros seleccionados?"): return
-        rows=leer_shipments(); new=[]
-        delset=set()
-        for iid in sel:
-            orden, molde, status, fecha, qty, dest, nota = self._tree_log.item(iid,"values")
-            delset.add((orden, fecha, str(qty), dest, nota, "1" if status=="Aprobada" else "0"))
-        for r in rows:
-            k=((r.get("orden","") or ""), r.get("ship_date",""), str(r.get("qty","")), r.get("destino",""), r.get("nota",""), r.get("approved","0"))
-            if k in delset: continue
-            new.append(r)
-        with open(SHIPMENTS_CSV,"w",newline="",encoding="utf-8") as f:
-            w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved"])
-            w.writeheader(); w.writerows(new)
-        self._refresh_order_header(); self._reload_order_shipments(); self._reload_log(); self._reload_analytics()
-
-    def _export_log_csv(self):
-        try:
-            path=filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV","*.csv")], initialfile="bitacora_salidas_filtrada.csv")
-        except: path=None
-        if not path: return
-        with open(path,"w",newline="",encoding="utf-8") as f:
-            w=csv.writer(f); w.writerow(["orden","molde","estado","fecha","qty","destino","nota"])
-            for iid in self._tree_log.get_children():
-                w.writerow(self._tree_log.item(iid,"values"))
-        messagebox.showinfo("Exportar", f"Archivo guardado:\n{path}")
-
-    # ====== Analytics ======
-    def _reload_analytics(self):
-        for i in self._tree_agg_ord.get_children(): self._tree_agg_ord.delete(i)
-        for i in self._tree_agg_mold.get_children(): self._tree_agg_mold.delete(i)
-
-        plan=leer_csv_dict(PLANNING_CSV)
-        fifo=compute_fifo_assignments(plan)
-
-        # por orden (aprobadas)
-        for r in plan:
-            orden=(r.get("orden","") or "").strip()
-            parte=(r.get("parte","") or "").strip()
-            molde=(r.get("molde_id","") or "").strip()
-            m=order_metrics(r, fifo)
-            objetivo=m["objetivo"]; enviado=m["enviado"]; pendiente=max(0, objetivo - enviado)
-            avance = (enviado/objetivo*100.0) if objetivo>0 else 0.0
-            self._tree_agg_ord.insert("", "end", values=(orden, parte, molde, objetivo, enviado, f"{avance:.1f}%", pendiente))
-
-        # por molde
-        molds=sorted({(r.get("molde_id","") or "").strip() for r in plan if r.get("molde_id")})
-        for m_id in molds:
-            mm=mold_metrics(m_id, fifo)
-            self._tree_agg_mold.insert("", "end", values=(m_id, mm["bruto"], mm["enviado"], mm["neto"], mm["sobrante"]))
+            key=(r.get("orden",""), r.get("ship_date",""), str(r.get("qty","")), r.get("destino",""), r.get("nota",""), r.get("approved","0"), r.get("entrega",""), r.get("autoriza",""))
+            if key not in keys_to_delete:
+                new_rows.append(r)
+        
+        with open(config.SHIPMENTS_CSV, "w", newline="", encoding="utf-8") as f:
+            w=csv.DictWriter(f, fieldnames=["orden","ship_date","qty","destino","nota","approved", "entrega", "autoriza"])
+            w.writeheader(); w.writerows(new_rows)
+        self._reload_all()
