@@ -82,10 +82,10 @@ class InventoryView(ctk.CTkFrame):
         
         # Lado izquierdo: Navegación y título
         left_section = ctk.CTkFrame(header_content, fg_color="transparent")
-        left_section.pack(side="left", fill="y")
+        left_section.pack(side="left", fill="x", expand=True)
         
         nav_row = ctk.CTkFrame(left_section, fg_color="transparent")
-        nav_row.pack(fill="x", pady=(0, 4))
+        nav_row.pack(side="left", pady=4)
         
         ctk.CTkButton(nav_row, text="← Menú", command=self.app.go_menu, 
                      width=100, height=36, corner_radius=10,
@@ -95,11 +95,11 @@ class InventoryView(ctk.CTkFrame):
         
         # Título principal
         title_row = ctk.CTkFrame(left_section, fg_color="transparent")
-        title_row.pack(fill="x")
+        title_row.pack(side="left", fill="x", expand=True)
         
         ctk.CTkLabel(title_row, text="📦 Gestión de Inventario",
                     font=ctk.CTkFont("Helvetica", 24, "bold"),
-                    text_color=("#1E293B", "#F1F5F9")).pack(side="left")
+                    text_color=("#1E293B", "#F1F5F9")).pack(side="left", padx=10)
         
         # Lado derecho: Controles avanzados
         right_section = ctk.CTkFrame(header_content, fg_color="transparent")
