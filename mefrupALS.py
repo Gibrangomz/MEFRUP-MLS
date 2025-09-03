@@ -9,7 +9,7 @@ from tkcalendar import Calendar
 import csv, os, logging, traceback
 from datetime import datetime, date, timedelta
 
-from config import *
+import config # <-- CAMBIO IMPORTANTE
 from csv_utils import *
 from metrics import *
 
@@ -30,7 +30,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme(os.path.join(BASE_DIR, "ios_blue.json"))
+        ctk.set_default_color_theme(os.path.join(config.BASE_DIR, "ios_blue.json"))
         self.title("Mefrup — ALS")
         try:
             self.state("zoomed")
@@ -64,21 +64,17 @@ class App(ctk.CTk):
         self.glob_perf=tk.StringVar(value="0.00%"); self.glob_qual=tk.StringVar(value="0.00%"); self.glob_oee=tk.StringVar(value="0.00%")
         self.glob_info=tk.StringVar(value="Registros: 0 | Días: 0")
 
-        # recetas catalog
         asegurar_archivos_basicos()
-        self.recipes = leer_csv_dict(RECIPES_CSV)
+        self.recipes = leer_csv_dict(config.RECIPES_CSV)
         self.recipe_map = {}
 
-        # vistas / contexto
         self.active_machine = None
         self.oee_page = None
         self.choose_page = None
-        self.oee_pages = {}  # id->OEEView
+        self.oee_pages = {}
         self.machine_context = {}
 
         self.dashboard_page = None
-
-        # planificación
         self.planning_page = None
         self.orders_board_page = None
         self.reports_page = None
@@ -87,14 +83,10 @@ class App(ctk.CTk):
         self.calculo_page = None
         self._shipments_preselect_order = None
 
-
-        # recalculo en tiempo real
         self.turno.trace_add("write", lambda *a: self._schedule_update())
         self.molde.trace_add("write", lambda *a: self._on_molde_change())
         self.total.trace_add("write", lambda *a: self._soft_sanitize(self.total, schedule=True))
         self.scrap.trace_add("write", lambda *a: self._soft_sanitize(self.scrap, schedule=True))
-
-        # contenedor & vistas
 
         self.container=ctk.CTkFrame(self, corner_radius=0, fg_color="transparent"); self.container.pack(fill="both", expand=True)
         self.menu_page=MainMenu(self.container, self)
@@ -104,24 +96,22 @@ class App(ctk.CTk):
         self.dashboard_page=LiveDashboard(self.container, self)
         self.reports_page=ReportsView(self.container, self)
 
-
         self._refresh_moldes_from_recipes()
         self.go_menu()
 
-        self.after(TICK_MS, self._tick)
+        self.after(config.TICK_MS, self._tick)
         self.after(200, self._apply_initial_scale)
 
-    # helpers
     def _set_text_if_changed(self, widget, text: str):
         if getattr(widget, "_last_text", None) != text:
             widget.configure(text=text)
             widget._last_text = text
+
     def _set_pb_if_changed(self, pb, frac: float, eps: float = 1e-3):
         frac = max(0.0, min(1.0, float(frac)))
         if abs(getattr(pb, "_last_val", -1.0) - frac) > eps:
             pb.set(frac); pb._last_val = frac
 
-    # navegación
     def _pack_only(self, view):
         for w in self.container.winfo_children(): w.pack_forget()
         view.pack(fill="both", expand=True)
@@ -134,7 +124,6 @@ class App(ctk.CTk):
         self._unbind_shortcuts_oee()
         self._pack_only(self.dashboard_page)
         try:
-            # refresco inmediato para mostrar datos actuales
             self.dashboard_page._refresh_now(date.today().isoformat())
         except Exception:
             logging.exception("Error al refrescar tablero en vivo")
@@ -205,9 +194,8 @@ class App(ctk.CTk):
         elif pwd is not None:
             messagebox.showerror("Acceso denegado", "Contraseña incorrecta.")
 
-    # recetas / moldes
     def _refresh_moldes_from_recipes(self, force_update_menu=False):
-        self.recipes = leer_csv_dict(RECIPES_CSV)
+        self.recipes = leer_csv_dict(config.RECIPES_CSV)
         self.recipe_map = {}
         opciones = ["Selecciona"]
         for r in self.recipes:
@@ -229,21 +217,19 @@ class App(ctk.CTk):
             try: self._on_molde_change()
             except: pass
 
-    # BINDS OEE
     def _bind_shortcuts_oee(self):
-        self.unbind("<Control-Return>"); self.bind("<Control-Return>", lambda e: self._guardar())
-        self.unbind("<Control-g>"); self.bind("<Control-g>", lambda e: self._nudge(self.total,+1))
-        self.unbind("<Control-h>"); self.bind("<Control-h>", lambda e: self._nudge(self.total,-1))
-        self.unbind("<Control-s>"); self.bind("<Control-s>", lambda e: self._nudge(self.scrap,+1))
-        self.unbind("<Control-d>"); self.bind("<Control-d>", lambda e: self._nudge(self.scrap,-1))
+        self.bind("<Control-Return>", lambda e: self._guardar())
+        self.bind("<Control-g>", lambda e: self._nudge(self.total,+1))
+        self.bind("<Control-h>", lambda e: self._nudge(self.total,-1))
+        self.bind("<Control-s>", lambda e: self._nudge(self.scrap,+1))
+        self.bind("<Control-d>", lambda e: self._nudge(self.scrap,-1))
     def _unbind_shortcuts_oee(self):
         self.unbind("<Control-Return>"); self.unbind("<Control-g>"); self.unbind("<Control-h>")
         self.unbind("<Control-s>"); self.unbind("<Control-d>")
 
-    # ERRORES
     def report_callback_exception(self, exc, val, tb):
         try:
-            logging.basicConfig(filename=os.path.join(BASE_DIR,"ui_errors.log"),
+            logging.basicConfig(filename=os.path.join(config.BASE_DIR,"ui_errors.log"),
                                 level=logging.ERROR,filemode="a")
             logging.error("".join(traceback.format_exception(exc,val,tb)))
         except: pass
@@ -252,7 +238,6 @@ class App(ctk.CTk):
         try: messagebox.showerror("Error en la UI", f"{val}\n(Detalle en ui_errors.log)")
         finally: self.after(200, lambda: setattr(self,"_error_showing",False))
 
-    # llamados por OptionMenu
     def _set_operador(self, nombre:str):
         self.operador.set(nombre or ""); self._update_save_state()
     def _set_turno(self, turno_val):
@@ -270,7 +255,6 @@ class App(ctk.CTk):
         except: pass
         self._update_save_state()
 
-    # recetas / moldes
     def _on_molde_change(self, *_):
         mid = str(self.molde.get() or "")
         rec = self.recipe_map.get(mid)
@@ -296,7 +280,6 @@ class App(ctk.CTk):
             except: pass
         self._schedule_update()
 
-    # ENTRADA
     def _get_int(self, v:tk.StringVar):
         s=(v.get() or "").strip()
         if s.startswith("-"): s=s[1:]
@@ -316,15 +299,13 @@ class App(ctk.CTk):
             except: pass
         if schedule: self._schedule_update()
 
-    # DEBOUNCE
     def _schedule_update(self):
         if self._update_job: self.after_cancel(self._update_job)
-        self._update_job = self.after(DEBOUNCE_MS, self._update_now)
+        self._update_job = self.after(config.DEBOUNCE_MS, self._update_now)
     def _update_now(self):
         self._update_job=None
         self._update_calculos()
 
-    # FECHA
     def _on_fecha_change(self):
         f=self.fecha_sel.get().strip()
         try: y,m,d=map(int,f.split("-")); _=date(y,m,d)
@@ -334,7 +315,6 @@ class App(ctk.CTk):
         self._refrescar_dia(); self._update_save_state(); self._reload_downtime_table()
 
     def _open_calendar(self):
-        # (no bloqueamos por daily global para mantener independencia)
         try:
             y,m,d=map(int,(self.fecha_sel.get() or date.today().isoformat()).split("-"))
             init=date(y,m,d)
@@ -352,12 +332,11 @@ class App(ctk.CTk):
         tk.Button(b, text="Seleccionar", command=choose).pack(side="left", padx=(0,6))
         tk.Button(b, text="Cerrar", command=top.destroy).pack(side="left")
 
-    # CRONÓMETRO (OEE)
     def toggle_paro(self):
         if not self.active_machine:
             messagebox.showwarning("Máquina","Primero elige una máquina."); return
         if not self.paro_running:
-            motivo = getattr(self, "motivo_menu", None).get() if hasattr(self, "motivo_menu") else MOTIVOS_PARO[0]
+            motivo = getattr(self, "motivo_menu", None).get() if hasattr(self, "motivo_menu") else config.MOTIVOS_PARO[0]
             nota   = getattr(self, "nota_entry", None).get() if hasattr(self, "nota_entry") else ""
             self.paro_motivo=motivo; self.paro_nota=nota
             self.paro_running=True; self.paro_start_ts=datetime.now()
@@ -404,7 +383,7 @@ class App(ctk.CTk):
             self._last_tick_value = now_val
             self._refresh_paro_labels()
             self._schedule_update()
-        self.after(TICK_MS, self._tick)
+        self.after(config.TICK_MS, self._tick)
 
     def _reload_downtime_table(self):
         if not (hasattr(self, "tree") and self.active_machine): return
@@ -417,9 +396,8 @@ class App(ctk.CTk):
             self.tree.insert("", "end", values=(r.get("inicio_ts",""), r.get("fin_ts",""),
                                                 r.get("motivo",""), r.get("nota",""), f"{dmin:.1f}"))
 
-    # ============ cálculos + guardar OEE ============
     def _update_calculos(self):
-        horas = TURNOS_HORAS.get(int(self.turno.get() or 0), 0)
+        horas = config.TURNOS_HORAS.get(int(self.turno.get() or 0), 0)
         ciclo = int(self.ciclo_s.get() or 0)
         turno_seg, oper_seg, meta_plan, meta_oper = calcular_tiempos(horas, ciclo, self._total_paro_secs())
         if hasattr(self,"meta_plan_val"): self._set_text_if_changed(self.meta_plan_val, str(meta_plan))
@@ -433,7 +411,6 @@ class App(ctk.CTk):
         if hasattr(self,"pb_meta"):    self._set_pb_if_changed(self.pb_meta,  (total/meta_oper) if meta_oper>0 else 0.0)
         if hasattr(self,"pb_quality"): self._set_pb_if_changed(self.pb_quality, (buenas/total) if total>0 else 0.0)
 
-    # helper: turno ya registrado para ESTA máquina
     def _turno_bloqueado_maquina(self, machine, fecha_iso, turno:int) -> bool:
         rows = leer_csv_dict(machine["oee_csv"])
         for r in rows:
@@ -452,13 +429,13 @@ class App(ctk.CTk):
             messagebox.showwarning("Faltan datos","Selecciona operador, turno y molde."); return
         try: y,m,d=map(int,f.split("-")); _=date(y,m,d)
         except: messagebox.showwarning("Fecha inválida","Usa YYYY-MM-DD."); return
-        # Independencia por máquina + por turno
+        
         if self._turno_bloqueado_maquina(self.active_machine, f, int(self.turno.get())):
             messagebox.showwarning("Turno ya registrado", f"{f} — turno {self.turno.get()} ya fue registrado en {self.active_machine['name']}."); return
 
         total=self._get_int(self.total); scrap=min(self._get_int(self.scrap), total)
         paro_seg=self._total_paro_secs()
-        horas=TURNOS_HORAS.get(int(self.turno.get() or 0),0); ciclo=int(self.ciclo_s.get() or 0)
+        horas=config.TURNOS_HORAS.get(int(self.turno.get() or 0),0); ciclo=int(self.ciclo_s.get() or 0)
         turno_seg, oper_seg, _, meta_oper = calcular_tiempos(horas, ciclo, paro_seg)
         buenas, A, P, Q, OEE = calcular_metricas(total, scrap, turno_seg, oper_seg, ciclo)
 
@@ -472,22 +449,18 @@ class App(ctk.CTk):
 
         rows_maquina = leer_csv_dict(self.active_machine["oee_csv"])
         a=acum_por_fecha(rows_maquina, f)
-        escribir_daily(DAILY_CSV_GLOBAL, f, a["oee_pct"], a["total"], a["scrap"], a["meta_pzs"])
+        escribir_daily(config.DAILY_CSV_GLOBAL, f, a["oee_pct"], a["total"], a["scrap"], a["meta_pzs"])
 
-        # combinado área
         total_area = scrap_area = meta_area = 0
         suma_oee = 0.0
-        for m in MACHINES:
+        for m in config.MACHINES:
             r = resumen_hoy_maquina(m, f)
             suma_oee += r["oee"]
             total_area += r["total"]
             scrap_area += r["scrap"]
             meta_area += r["meta"]
-        if MACHINES:
-            OEE_area = suma_oee / len(MACHINES)
-        else:
-            OEE_area = 0.0
-        escribir_daily(DAILY_CSV_INJECTOR, f, OEE_area, total_area, scrap_area, meta_area)
+        OEE_area = (suma_oee / len(config.MACHINES)) if config.MACHINES else 0.0
+        escribir_daily(config.DAILY_CSV_INJECTOR, f, OEE_area, total_area, scrap_area, meta_area)
 
         self._refrescar_dia(); self._refrescar_hist(); self._refrescar_global(); self._update_save_state()
         if getattr(self, 'dashboard_page', None):
@@ -507,11 +480,10 @@ class App(ctk.CTk):
         a=acum_por_fecha(leer_csv_dict(self.active_machine["oee_csv"]), f)
         self.tot_day.set(str(a["total"])); self.scr_day.set(str(a["scrap"])); self.buen_day.set(str(a["buenas"]))
         self.perf_day.set(f"{a['perf_pct']:.2f}%"); self.qual_day.set(f"{a['qual_pct']:.2f}%"); self.oee_day.set(f"{a['oee_pct']:.2f}%")
-        # info: no bloqueamos por DAILY_CSV_GLOBAL para permitir turnos múltiples
         self.day_info.set("Registros del día: "+str(a.get("count",0)) if a.get("count",0) else "Sin registros para la fecha.")
 
     def _refrescar_hist(self):
-        self.oee_hist.set(f"{promedio_oee_daily(DAILY_CSV_GLOBAL):.2f}%")
+        self.oee_hist.set(f"{promedio_oee_daily(config.DAILY_CSV_GLOBAL):.2f}%")
     def _refrescar_global(self):
         if not self.active_machine: return
         g=acum_global(leer_csv_dict(self.active_machine["oee_csv"]))
