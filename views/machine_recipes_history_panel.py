@@ -8,6 +8,11 @@ from .machine_recipes_constants import (
     _save_version_snapshot,
     _load_version_snapshot,
     _find_excel_template,
+    _normalize_win_path,
+    _export_with_excel_com,
+    _export_snapshot_to_template,
+    _safe_pdf,
+    HAS_EXCEL_COM,
 )
 import json, os, sys
 
@@ -534,4 +539,4 @@ def open_history(view):
     btn_xlsx.configure(command=export_excel)
     btn_pdf.configure(command=export_pdf)
     load_versions()
-
+    
